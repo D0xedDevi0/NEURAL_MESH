@@ -557,6 +557,21 @@ REPRESENTATIVE-100, SAME stratified sample, v4-flash judge — MODE COMPARISON:
 
 > Reproduce: `PYTHONPATH=. .venv/bin/python bench/longmemeval_harness.py --embedder real --top_k 5 --limit 100`  ·  representative sample: `bench/sample_representative.py --n 100 --seed 7`  ·  judged run: `NOUS_JUDGE_MODEL=deepseek/deepseek-v4-flash PYTHONPATH=. .venv/bin/python bench/longmemeval_harness.py --embedder real --mode {hybrid|dense} --judge --limit 100 --dataset data/longmemeval_oracle_sample100.json`
 
+**v4-pro judge + rewrite — resonance vs dense (same 100 cases, same judge, same config, mode is the ONLY variable):**
+```text
+  mode       JudgeF1  EM     n
+  resonance 0.344    0.250  100/100   ← NEW: spreading-activation beats dense
+  dense     0.326    0.200  100/100
+```
+Resonance wins on both JudgeF1 (+0.018) and EM (+0.05), and lifts the categories
+NEURAL_MESH claims to own — multi-session EM 0.222 vs dense 0.185, temporal-reasoning
+F1 0.303 vs 0.260, single-session-assistant F1 0.390 vs 0.302. single-session-user stays
+elite (F1 0.73). NOTE: this pair uses the default v4-pro-0813 judge + `--rewrite`, so it
+is an *internal* resonance-vs-dense comparison and is NOT directly comparable to the
+v4-flash rows above. Honest conclusion: under a stronger judge, resonance edges dense on
+the exact cross-session/temporal categories it is built for. Overall F1 ~0.34 remains
+modest — retrieval recall, not the judge, is the ceiling (see finding 2).
+
 ### Associative recall — where resonance *wins* ✅ (and where it doesn't)
 
 LoCoMo is a *single-query → single-answer* task, so flat dense wins there
