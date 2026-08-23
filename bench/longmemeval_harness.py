@@ -290,11 +290,12 @@ def judge_answer(query, context_chunks, gold_answer, api_key=None):
 # ─── Main benchmark ───────────────────────────────────────────────────────
 
 def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
-                  embedder=None, validator=False):
+                  embedder=None, validator=False, query_rewrite=False):
     """Run LongMemEval benchmark and return per-category + overall metrics.
 
     `embedder` is either a callable embedder instance (e.g. RealEmbedder()) or
     None, in which case the zero-dep hashed embedder is used.
+    `query_rewrite` toggles neural_mesh.query_rewrite on the mesh's embed query.
     """
     if limit:
         cases = cases[:limit]
@@ -308,7 +309,7 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
         # Fresh mesh per case (LongMemEval cases are independent)
         from neural_mesh.embed import embed as _hashed_embed
         mesh = Mesh(":memory:", embedder=embedder or _hashed_embed,
-                     validator=validator)
+                     validator=validator, query_rewrite=query_rewrite)
         node_ids = ingest_case(mesh, case)
 
         # Retrieve
@@ -415,12 +416,15 @@ def main():
                         help="Save results to JSON (default: print only)")
     parser.add_argument("--validator", action="store_true", default=False,
                         help="Enable ContentValidator (off by default for speed)")
+    parser.add_argument("--rewrite", action="store_true", default=False,
+                        help="Apply neural_mesh.query_rewrite to the embed query")
     args = parser.parse_args()
 
     print("=" * 60)
     print("LongMemEval — NEURAL_MESH Memory Benchmark")
     print(f"  mode={args.mode}  top_k={args.top_k}  embedder={args.embedder}"
-          f"  limit={args.limit or 'all'}  judge={args.judge}")
+          f"  limit={args.limit or 'all'}  judge={args.judge}"
+          f"  rewrite={args.rewrite}")
     print("=" * 60)
 
     # Load dataset
@@ -451,6 +455,7 @@ def main():
         judge=args.judge, limit=args.limit,
         embedder=embedder,
         validator=args.validator,
+        query_rewrite=args.rewrite,
     )
 
     # Print report

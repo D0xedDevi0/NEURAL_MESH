@@ -22,7 +22,8 @@ class Mesh:
                  default_recall: str = "dense",
                  validator: "ContentValidator | None | bool" = True,
                  quarantine_policy: str = "strict",
-                 lexical_backend: str = "bow"):
+                 lexical_backend: str = "bow",
+                 query_rewrite: bool = False):
         if default_recall not in {"resonance", "hybrid", "dense", "lexical"}:
             raise ValueError(
                 "default_recall must be 'resonance', 'hybrid', 'dense', or 'lexical'")
@@ -39,6 +40,7 @@ class Mesh:
         self.resonance_backend = resonance_backend
         self.default_recall = default_recall
         self.lexical_backend = lexical_backend
+        self.query_rewrite = query_rewrite
         # Memory-poisoning defense (OWASP ASI06): content is scanned before it
         # enters the mesh. validator=False disables the scan (tests/benchmarks
         # that intentionally store hostile-looking text).
@@ -339,7 +341,7 @@ class Mesh:
         if self.default_recall == "lexical":
             return self.lexical_recall(query, top_k=top_k, writeback=writeback, lane=lane)
         # resonance (spreading activation over dense embedder)
-        qe = self.embedder(query)
+        qe = self._embed_query(query)
         nodes = {n.id: n for n in self._live_nodes(lane)}
         hits = _resonance_retrieve(
             nodes, qe, top_k=top_k, backend=self.resonance_backend)
@@ -360,6 +362,20 @@ class Mesh:
             cached = hashed_embed(content)
             self._lex_cache[content] = cached
         return cached
+
+    def _embed_query(self, query: str):
+        """Embed a query, optionally applying heuristic query rewriting.
+
+        Query rewriting (neural_mesh.query_rewrite) expands the raw question
+        with extracted temporal cues + key entities so the dense vector carries
+        the anchors the target node shares. It is off by default; toggle via
+        the `query_rewrite` constructor flag. This is a measured retrieval
+        lever — if it doesn't lift MRR on the benchmark it stays off."""
+        q = query
+        if self.query_rewrite:
+            from .query_rewrite import rewrite_query
+            q = rewrite_query(query)
+        return self.embedder(q)
 
     def _live_nodes(self, lane: "str | None" = None,
                     include_quarantine: bool = False):
@@ -382,7 +398,7 @@ class Mesh:
                      lane: "str | None" = None):
         """Pure cosine over stored (dense) embeddings — no resonance spread.
         Fair baseline for comparing against lexical/hybrid fusion."""
-        qe = self.embedder(query)
+        qe = self._embed_query(query)
         scored = [(_sim(qe, n.embedding), n) for n in self._live_nodes(lane)]
         scored.sort(key=lambda x: -x[0])
         hits = [n for _, n in scored[:top_k]]
@@ -452,7 +468,7 @@ class Mesh:
         alpha=1.0 -> dense only; alpha=0.0 -> lexical only. Hybrid is meant to
         dominate either alone on a lexical-overlap grounding proxy while keeping
         paraphrase coverage from the dense side. Skips superseded nodes."""
-        qe = self.embedder(query)
+        qe = self._embed_query(query)
         ql = self._lex_emb(query)
         scored = []
         for n in self._live_nodes(lane):
