@@ -482,6 +482,52 @@ class Mesh:
         return hits
 
     # ---------- SLEEP: replay -> strengthen -> prune ----------
+    def fused_recall(self, query: str, top_k: int = 5, alpha: float = 0.6,
+                     writeback: bool = False,
+                     lane: "str | None" = None):
+        """Rank-fuse DENSE and RESONANCE retrieval (v0.29.0).
+
+        Motivated by the measured LongMemEval result (2026-08-24): with a real
+        embedder + generative judge, resonance beats dense end-to-end
+        (judge F1 0.344 / EM 0.250 vs dense 0.326 / 0.200) even though its
+        raw MRR ties dense — spreading activation surfaces answer-bearing
+        nodes the judge can use but lexical ranking misses.
+
+        Fusion is reciprocal-rank (RRF-style): each node gets
+            score = alpha / (60 + rank_dense) + (1-alpha) / (60 + rank_resonance)
+        over the union of both top-`2*top_k` candidate lists (k=60 constant).
+        Nodes absent from one list simply don't earn that side's credit.
+        alpha=1.0 -> dense only; alpha=0.0 -> resonance only.
+        """
+        qe = self._embed_query(query)
+        live = self._live_nodes(lane)
+        if not live:
+            return []
+        # Dense side: full cosine ranking.
+        dense_scored = sorted(
+            ((_sim(qe, n.embedding), n) for n in live),
+            key=lambda x: -x[0])
+        # Resonance side: reuse the shared spreading-activation helper.
+        nodes_by_id = {n.id: n for n in live}
+        res_hits = _resonance_retrieve(
+            nodes_by_id, qe, top_k=max(top_k * 4, 20),
+            backend=self.resonance_backend)
+
+        k = 60
+        rrf: dict = {}
+        node_by_id: dict = {}
+        for rank, (_, n) in enumerate(dense_scored[:max(top_k * 4, 20)]):
+            rrf[n.id] = rrf.get(n.id, 0.0) + alpha / (k + rank + 1)
+            node_by_id[n.id] = n
+        for rank, n in enumerate(res_hits[:max(top_k * 4, 20)]):
+            rrf[n.id] = rrf.get(n.id, 0.0) + (1.0 - alpha) / (k + rank + 1)
+            node_by_id[n.id] = n
+        ordered = sorted(rrf.items(), key=lambda kv: -kv[1])
+        hits = [node_by_id[nid] for nid, _ in ordered[:top_k]]
+        for n in hits:
+            self._touch(n, writeback=writeback)
+        return hits
+
     def sleep(self, prune_below: float = 0.05, max_age_days: float = 30.0,
               reflect_fn=None, unverified_decay: float = 0.85) -> dict:
         nodes = self._load()

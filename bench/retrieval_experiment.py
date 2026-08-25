@@ -27,7 +27,7 @@ from longmemeval_harness import (  # noqa: E402
     load_longmemeval, run_benchmark, context_recall, mrr,
 )
 
-MODES = ["dense", "lexical", "hybrid", "resonance"]
+MODES = ["dense", "lexical", "hybrid", "resonance", "fused"]
 
 
 def main():

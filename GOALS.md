@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `BasedNUKEM/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-08-14 · Current shipped: **v0.27.0**
+> Last updated: 2026-08-14 · Current shipped: **v0.29.0**
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
 purpose: every stage starts from the *outcome* we want to prove, then lists the
@@ -227,6 +227,54 @@ defaults to hashed when None.
 🟦 Judge run (Hermes/Nous LLM path) for semantic EM/F1 — DONE (two runs; final
 honest number = full-100 F1 0.0801, answered-only 0.1541 over 52/100; default
 model fixed to v4-pro-0813 for a full-coverage re-run).
+
+---
+
+## Goal 6 — v0.29.0: fused retrieval, x402 selector fix, reputation-sync repair (2026-08-24)
+
+**Status:** 🟦 SHIPPED CODE + TESTS GREEN (release commit pending fused-bench verdict)
+
+🟦 **Query-rewrite verdict banked (honest):** dense+rewrite MRR 0.2758 vs dense
+baseline 0.277 on the stratified-100 real-embedder run → **tie/noise**.
+`query_rewrite` stays opt-in (`Mesh(query_rewrite=True)`), default OFF.
+
+🟦 **Resonance wins end-to-end with a generative judge** (stratified 100,
+real bge-small, v4-flash judge): judge F1 **0.344 / EM 0.250** vs dense
+F1 0.326 / EM 0.200. Raw MRR ties (0.276 both) — spreading activation surfaces
+answer-bearing context that flat ranking misses. The old "resonance is 5×
+worse" LoCoMo finding is a metric mismatch; judged QA is the quality read.
+
+🟦 **`Mesh.fused_recall(query, top_k, alpha=0.5)`** — reciprocal-rank fusion of
+dense + resonance candidate lists. Wired into the LongMemEval harness and
+`bench/retrieval_experiment.py` as mode `fused`. Directional hashed-embedder
+run is uninformative (all modes identical under bag-of-words — known artifact);
+decision-grade verdict requires the real embedder.
+
+🟦 **SECURITY FIX — x402 receipt selector was WRONG:** `x402_recall.py` used
+NIST SHA3-256 (hashlib.sha3_256 → `0x378c745b`), but Ethereum uses Keccak-256;
+the true selector for `recordReceipt(string,address,address,uint256,bytes32)`
+is **`0x23d1ad26`**. Every legitimate receipt would have failed verification.
+Fixed with `_keccak256()` (pycryptodome when present + pure-Python
+Keccak-f[1600] fallback — core stays pip-free). Both paths tested equal.
+Test suite updated to import the module's real selector.
+
+🟦 **erc8004_reputation_sync.py repaired (2 dead-on-arrival bugs):**
+(1) `mesh.stats()['total_nodes']` KeyError → stats returns `{total,hot,cold}`;
+(2) `Mesh(":memory:")` always saw an empty mesh ("no nodes" every run) →
+defaults to the repo `mesh.db`. Dry-run now works: live signal value **87/100**,
+mean trust 0.869 over 252 nodes, zero quarantined. `--execute` remains gated:
+web3 not installed AND the Base ReputationRegistry address is still TBD
+(spec doc: "Awaiting deploy") — deploy decision is a human GO.
+
+### Verification
+```bash
+PYTHONPATH=. python3 -m unittest discover -s tests   # core
+.venv-server/bin/python -m unittest discover -s tests  # full incl. server (222 OK)
+PYTHONPATH=. .venv-server/bin/python bench/retrieval_experiment.py \
+    --limit 25 --dataset data/longmemeval_stratified25.json \
+    --embedder real --output data/retrieval_fused_real25.json
+python3 scripts/erc8004_reputation_sync.py --dry-run
+```
 
 ---
 

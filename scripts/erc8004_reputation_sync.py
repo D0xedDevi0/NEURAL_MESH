@@ -194,9 +194,16 @@ def main():
     args = parser.parse_args()
 
     # Load mesh
-    mesh = Mesh(":memory:")  # Reads from persistent store if configured
-    print(f"\nMesh: {mesh.stats()['total_nodes']} total, "
-          f"{mesh.stats().get('active_nodes', '?')} active")
+    # v0.29.0: ":memory:" meant the script always saw an EMPTY mesh ("no
+    # nodes" on every run). Default to the repo's persistent mesh.db.
+    default_db = os.path.join(os.path.dirname(os.path.dirname(
+        os.path.abspath(__file__))), "mesh.db")
+    mesh = Mesh(default_db)
+    # v0.29.0 fix: mesh.stats() returns {"total","hot","cold"} — the old
+    # 'total_nodes'/'active_nodes' keys don't exist (KeyError on every run).
+    _st = mesh.stats()
+    print(f"\nMesh: {_st.get('total', len(mesh._load()))} total, "
+          f"{_st.get('hot', '?')} hot / {_st.get('cold', '?')} cold")
 
     if args.registry:
         global REPUTATION_REGISTRY

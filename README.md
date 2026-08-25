@@ -498,6 +498,14 @@ GENERATIVE LLM JUDGE  (real retrieval, 100 queries, top_k=5, model=deepseek-v4-f
 
 > Reproduce: `OPENROUTER_API_KEY=<nous access_token> PYTHONPATH=. .venv/bin/python bench/locomo_llm_judge.py --locomo locomo10.json --limit 100 --model deepseek/deepseek-v4-flash --mode hybrid`
 
+## 🟦 v0.29.0 — fused retrieval + x402 selector fix (2026-08-24)
+
+- 🟦 **Resonance beats dense end-to-end under a generative judge** (stratified 100, real bge-small, deepseek-v4-flash judge): judge F1 **0.344 / EM 0.250** vs dense 0.326 / 0.200; raw MRR ties at 0.276. Spreading activation earns its keep when the retrieved context feeds a reader — flat dense remains the right tool for raw lexical-overlap proxies.
+- 🟦 **`Mesh.fused_recall()`** ships: reciprocal-rank fusion of the dense and resonance candidate lists (`alpha` controls the blend). Verdict on LongMemEval pending a real-embedder run; hashed runs are uninformative (all modes collapse to identical rankings — known bag-of-words artifact).
+- 🟦 **Query rewrite stays opt-in**: dense+rewrite MRR 0.2758 vs dense 0.277 = tie. Default OFF.
+- 🟦 **Security fix:** x402 `PaidRecallGate` verified receipts against the WRONG function selector — NIST SHA3-256 (`0x378c745b`) instead of Ethereum Keccak-256 (**`0x23d1ad26`**). Every legitimate payment receipt would have been rejected. Fixed with a pure-Python keccak fallback (core stays pip-free); tests updated.
+- 🟦 **ERC-8004 reputation sync repaired**: dry-run now reads the live mesh (signal value 87/100, mean trust 0.869 over 252 nodes, zero quarantined). On-chain `--execute` remains GO-gated (ReputationRegistry address TBD).
+
 ### LongMemEval retrieval grounding (honest, in progress)
 
 We run the canonical **LongMemEval** (500-case long-term conversational memory)

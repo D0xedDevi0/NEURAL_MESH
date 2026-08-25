@@ -83,11 +83,11 @@ class TestReceiptVerification(unittest.TestCase):
 
     def _mock_rpc_tx(self, to_addr=RECEIPT_CONTRACT, input_data=None):
         if input_data is None:
-            import hashlib
-            selector = "0x" + hashlib.sha3_256(
-                b"recordReceipt(string,address,address,uint256,bytes32)"
-            ).hexdigest()[:8]
-            input_data = selector + "00" * 100  # pad with dummy data
+            # v0.29.0: use the module's REAL keccak-256 selector (the old
+            # hashlib.sha3_256 constant was wrong — NIST SHA3 ≠ Ethereum
+            # Keccak). Importing keeps this test honest against regressions.
+            from neural_mesh.x402_recall import RECORD_RECEIPT_SELECTOR
+            input_data = RECORD_RECEIPT_SELECTOR + "00" * 100  # pad with dummy data
         return {
             "jsonrpc": "2.0",
             "id": 1,

@@ -156,6 +156,8 @@ def retrieve_for_question(mesh, question, top_k=5, mode="dense"):
         results = mesh.hybrid_recall(question, top_k=top_k)
     elif mode == "resonance":
         results = mesh.recall(question, top_k=top_k)
+    elif mode == "fused":
+        results = mesh.fused_recall(question, top_k=top_k)
     return [r.content for r in results]
 
 
