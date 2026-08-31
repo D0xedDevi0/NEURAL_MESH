@@ -89,6 +89,25 @@
   #spine-rail .stage { font-size:0.6rem; color:#62666d; background:rgba(8,12,32,0.8); border:1px solid rgba(0,229,255,0.12); border-radius:6px; padding:0.28rem 0.6rem; cursor:pointer; letter-spacing:0.05em; }
   #spine-rail .stage:hover { color:#00E5FF; border-color:rgba(0,229,255,0.4); }
   #spine-rail .stage.active { color:#00E5FF; background:rgba(0,229,255,0.12); }
+  /* Body tools panel (anatomy-viewer: layers / hierarchy / explode) */
+  #body-tools { position:fixed; left:1.5rem; bottom:1.5rem; z-index:12; width:230px; background:rgba(8,12,32,0.94); border:1px solid rgba(0,229,255,0.2); border-radius:12px; padding:0.8rem; backdrop-filter:blur(14px); display:none; font-family:'JetBrains Mono',monospace; }
+  #body-tools.visible { display:block; }
+  #body-tools h4 { font-size:0.62rem; color:#00E5FF; letter-spacing:0.08em; text-transform:uppercase; margin-bottom:0.5rem; }
+  #body-tools .bt-row { display:flex; align-items:center; justify-content:space-between; gap:0.5rem; font-size:0.62rem; color:#8a8f98; padding:0.22rem 0; cursor:pointer; }
+  #body-tools .bt-row:hover { color:#d0d6e0; }
+  #body-tools .bt-row .sw { width:26px; height:14px; border-radius:7px; background:rgba(255,255,255,0.12); position:relative; flex-shrink:0; transition:background 0.15s; }
+  #body-tools .bt-row .sw::after { content:''; position:absolute; top:2px; left:2px; width:10px; height:10px; border-radius:50%; background:#8a8f98; transition:left 0.15s, background 0.15s; }
+  #body-tools .bt-row .sw.on { background:rgba(0,229,255,0.35); }
+  #body-tools .bt-row .sw.on::after { left:14px; background:#00E5FF; }
+  #body-tools .bt-row .sw.off { opacity:0.4; }
+  #body-tools .bt-slider { width:100%; margin:0.3rem 0 0.6rem; accent-color:#00E5FF; }
+  #body-tools .bt-label { font-size:0.6rem; color:#62666d; margin-top:0.3rem; }
+  #body-tools .bt-sep { border-top:1px solid rgba(0,229,255,0.12); margin:0.5rem 0; }
+  #body-tools .bt-hint { font-size:0.55rem; color:#62666d; line-height:1.4; margin-top:0.4rem; }
+  @media (max-width: 700px) {
+    #body-tools { display:none !important; }
+  }
+
   @media (max-width: 700px) {
     #hud { padding:0.7rem; gap:0.55rem; }
     .brand { width:100%; justify-content:space-between; }
@@ -148,6 +167,17 @@
 <span id="pause-timer"></span>
 
 <div id="spine-rail"></div>
+<div id="body-tools">
+  <h4>🦾 Body Systems</h4>
+  <div id="bt-layers"></div>
+  <div class="bt-sep"></div>
+  <div class="bt-label">explode</div>
+  <input id="bt-explode" class="bt-slider" type="range" min="0" max="1" step="0.01" value="0">
+  <div class="bt-label">layer opacity</div>
+  <input id="bt-opacity" class="bt-slider" type="range" min="0.05" max="1" step="0.01" value="1">
+  <div class="bt-hint">toggle systems · explode the figure · fade layers to see internals</div>
+</div>
+
 
 <div id="inspector">
   <button id="inspector-close" aria-label="Close details" onclick="closeInspector()">×</button>
@@ -187,7 +217,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 const CAPTURE = new URLSearchParams(location.search).has('capture');
 const INITIAL_VIEW = new URLSearchParams(location.search).has('spine') ? 'spine' : 'brain';
 if (CAPTURE) {
-  ['hud','legend','brain-badge','view-switch','spine-rail','search-bar','search-status','mode-toggle','dream-btn','pause-btn','pause-timer','ticker'].forEach(id => {
+  ['hud','legend','brain-badge','view-switch','spine-rail','body-tools','search-bar','search-status','mode-toggle','dream-btn','pause-btn','pause-timer','ticker'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
@@ -546,133 +576,143 @@ function buildHumanoidBody(){
   const darkMat  = new THREE.MeshPhongMaterial({ color:DARK,  transparent:true, opacity:0.98, shininess:60, specular:0x66aaff, emissive:DARK,  emissiveIntensity:0.4 });
   const steelMat = new THREE.MeshPhongMaterial({ color:STEEL, transparent:true, opacity:0.98, shininess:120, specular:0xffffff, emissive:STEEL, emissiveIntensity:0.6 });
   const glowMat  = new THREE.MeshBasicMaterial({ color:CYAN, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending });
+  // ── anatomy-viewer system groups (layered body systems) ──
+  const systems = {
+    head:  new THREE.Group(),   // SPEAK · perception
+    torso: new THREE.Group(),   // DECIDE · agent core
+    spine: new THREE.Group(),   // CONSOLIDATE · sleep column
+    arms:  new THREE.Group(),   // EXECUTE · hands
+    legs:  new THREE.Group(),   // grounding
+    cape:  new THREE.Group(),   // FEDERATE · aura
+  };
+  const tag = (m, sys) => { m.userData.system = sys; systems[sys].add(m); };
 
   // ── HEAD: angular cyber-mystic hood (D0xed Dev identity) ──
   const head = new THREE.Group();
-  // tapered angular hood shell (4-sided cone, rotated to diamond)
   const hood = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.62, 4), armorMat);
   hood.position.set(0, 1.82, 0.02); hood.rotation.y = Math.PI/4; head.add(hood);
-  // dark face void
   const face = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.3, 0.06), darkMat);
   face.position.set(0, 1.72, 0.3); head.add(face);
-  // two small square LED eyes (guardian char lock — face only, never cube)
-    const eyeGeo = new THREE.BoxGeometry(0.17, 0.17, 0.03);
-    const eyeL = new THREE.Mesh(eyeGeo, glowMat); eyeL.position.set(-0.13, 1.74, 0.34); head.add(eyeL);
-    const eyeR = new THREE.Mesh(eyeGeo, glowMat); eyeR.position.set(0.13, 1.74, 0.34); head.add(eyeR);
-    // dark backing plates for contrast so the LEDs read as solid squares
-    const eyeBackGeo = new THREE.BoxGeometry(0.25, 0.25, 0.02);
-    const eyeBackL = new THREE.Mesh(eyeBackGeo, darkMat); eyeBackL.position.set(-0.13, 1.74, 0.32); head.add(eyeBackL);
-    const eyeBackR = new THREE.Mesh(eyeBackGeo, darkMat); eyeBackR.position.set(0.13, 1.74, 0.32); head.add(eyeBackR);
-    eyeL.userData.phase = Math.random()*6; eyeR.userData.phase = Math.random()*6;
-    body.userData.eyes = [eyeL, eyeR];
-  // metallic hood rim band
+  const eyeGeo = new THREE.BoxGeometry(0.17, 0.17, 0.03);
+  const eyeL = new THREE.Mesh(eyeGeo, glowMat); eyeL.position.set(-0.13, 1.74, 0.34); head.add(eyeL);
+  const eyeR = new THREE.Mesh(eyeGeo, glowMat); eyeR.position.set(0.13, 1.74, 0.34); head.add(eyeR);
+  const eyeBackGeo = new THREE.BoxGeometry(0.25, 0.25, 0.02);
+  const eyeBackL = new THREE.Mesh(eyeBackGeo, darkMat); eyeBackL.position.set(-0.13, 1.74, 0.32); head.add(eyeBackL);
+  const eyeBackR = new THREE.Mesh(eyeBackGeo, darkMat); eyeBackR.position.set(0.13, 1.74, 0.32); head.add(eyeBackR);
+  eyeL.userData.phase = Math.random()*6; eyeR.userData.phase = Math.random()*6;
+  body.userData.eyes = [eyeL, eyeR];
   const hoodRim = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.08, 0.46), steelMat);
   hoodRim.position.set(0, 1.52, 0.02); head.add(hoodRim);
-  body.add(head);
+  tag(head, 'head');
 
   // ── NECK with glowing ring ──
   const neck = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.14, 0.22, 10), darkMat);
-  neck.position.set(0, 1.4, 0); body.add(neck);
+  neck.position.set(0, 1.4, 0); tag(neck, 'head');
   const neckRing = new THREE.Mesh(new THREE.TorusGeometry(0.15, 0.02, 8, 20), glowMat);
-  neckRing.position.set(0, 1.42, 0); neckRing.rotation.x = Math.PI/2; body.add(neckRing);
+  neckRing.position.set(0, 1.42, 0); neckRing.rotation.x = Math.PI/2; tag(neckRing, 'head');
 
   // ── TORSO: segmented chest armor ──
   const torso = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.9, 0.44), armorMat);
-  torso.position.set(0, 0.7, 0); body.add(torso);
-  // chest core (DECIDE heart) — glowing square
+  torso.position.set(0, 0.7, 0); tag(torso, 'torso');
   const core = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.2, 0.06), glowMat);
-  core.position.set(0, 0.62, 0.24); body.add(core);
-  // chest plate
+  core.position.set(0, 0.62, 0.24); tag(core, 'torso');
   const plate = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.3, 0.05), steelMat);
-  plate.position.set(0, 0.88, 0.23); body.add(plate);
-  // waist
+  plate.position.set(0, 0.88, 0.23); tag(plate, 'torso');
   const waist = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.4), darkMat);
-  waist.position.set(0, 0.28, 0); body.add(waist);
-  // abdominal armor segments
+  waist.position.set(0, 0.28, 0); tag(waist, 'torso');
   for (let a=0; a<3; a++){
     const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.1,0.4), steelMat);
-    seg.position.set(0, 0.44 - a*0.12, 0.02); body.add(seg);
-  }
-  // ── SPINE COLUMN: segmented vertebrae + glowing discs down the back ──
-  for (let v=0; v<7; v++){
-    const y = 0.12 + v*0.16;
-    const vert = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.05,8), steelMat);
-    vert.position.set(0, y, -0.2); body.add(vert);
-    const disc = new THREE.Mesh(new THREE.TorusGeometry(0.1,0.012,6,16), glowMat);
-    disc.position.set(0, y+0.03, -0.2); disc.rotation.x = Math.PI/2; body.add(disc);
+    seg.position.set(0, 0.44 - a*0.12, 0.02); tag(seg, 'torso');
   }
   // circuit traces on chest
   const circuitMat = new THREE.MeshBasicMaterial({ color:CYAN, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending });
   const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.02,0.02), circuitMat);
-  c1.position.set(0, 0.7, 0.25); body.add(c1);
+  c1.position.set(0, 0.7, 0.25); tag(c1, 'torso');
   const c2 = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.2,0.02), circuitMat);
-  c2.position.set(0.1, 0.7, 0.25); body.add(c2);
+  c2.position.set(0.1, 0.7, 0.25); tag(c2, 'torso');
   const c3 = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.2,0.02), circuitMat);
-  c3.position.set(-0.1, 0.7, 0.25); body.add(c3);
+  c3.position.set(-0.1, 0.7, 0.25); tag(c3, 'torso');
+
+  // ── SPINE COLUMN: segmented vertebrae + glowing discs down the back ──
+  for (let v=0; v<7; v++){
+    const y = 0.12 + v*0.16;
+    const vert = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.05,8), steelMat);
+    vert.position.set(0, y, -0.2); tag(vert, 'spine');
+    const disc = new THREE.Mesh(new THREE.TorusGeometry(0.1,0.012,6,16), glowMat);
+    disc.position.set(0, y+0.03, -0.2); disc.rotation.x = Math.PI/2; tag(disc, 'spine');
+  }
 
   // ── SHOULDERS: angular pauldrons with glow strips ──
   for (const side of [-1,1]){
     const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.18, 0.4), steelMat);
-    pauldron.position.set(side*0.44, 1.12, 0); pauldron.rotation.z = side*0.25; body.add(pauldron);
+    pauldron.position.set(side*0.44, 1.12, 0); pauldron.rotation.z = side*0.25; tag(pauldron, 'arms');
     const glowStrip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.3), glowMat);
-    glowStrip.position.set(side*0.44, 1.12, 0.16); body.add(glowStrip);
+    glowStrip.position.set(side*0.44, 1.12, 0.16); tag(glowStrip, 'arms');
     const ball = new THREE.Mesh(new THREE.SphereGeometry(0.09,12,10), glowMat);
-    ball.position.set(side*0.5, 1.0, 0); body.add(ball);
+    ball.position.set(side*0.5, 1.0, 0); tag(ball, 'arms');
   }
 
   // ── ARMS: upper + elbow ring + forearm + hand ──
   for (const side of [-1,1]){
     const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.09,0.6,12), armorMat);
-    upper.position.set(side*0.5, 0.85, 0); upper.rotation.z = side*0.1; body.add(upper);
+    upper.position.set(side*0.5, 0.85, 0); upper.rotation.z = side*0.1; tag(upper, 'arms');
     const elbow = new THREE.Mesh(new THREE.TorusGeometry(0.1,0.02,8,16), glowMat);
-    elbow.position.set(side*0.53, 0.55, 0); elbow.rotation.x = Math.PI/2; body.add(elbow);
+    elbow.position.set(side*0.53, 0.55, 0); elbow.rotation.x = Math.PI/2; tag(elbow, 'arms');
     const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.2,6), steelMat);
-    piston.position.set(side*0.53, 0.4, 0.1); body.add(piston);
+    piston.position.set(side*0.53, 0.4, 0.1); tag(piston, 'arms');
     const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.08,0.6,12), steelMat);
-    fore.position.set(side*0.56, 0.25, 0); fore.rotation.z = side*0.08; body.add(fore);
+    fore.position.set(side*0.56, 0.25, 0); fore.rotation.z = side*0.08; tag(fore, 'arms');
     const hand = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.14,0.12), darkMat);
-    hand.position.set(side*0.58, -0.05, 0); body.add(hand);
-    // fingers
+    hand.position.set(side*0.58, -0.05, 0); tag(hand, 'arms');
     for (let f=0; f<3; f++){
       const finger = new THREE.Mesh(new THREE.BoxGeometry(0.03,0.1,0.03), steelMat);
-      finger.position.set(side*0.58 + side*0.02, -0.12, -0.03 + f*0.03); body.add(finger);
+      finger.position.set(side*0.58 + side*0.02, -0.12, -0.03 + f*0.03); tag(finger, 'arms');
     }
   }
 
   // ── PELVIS ──
   const pelvis = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.22, 0.4), armorMat);
-  pelvis.position.set(0, 0.05, 0); body.add(pelvis);
+  pelvis.position.set(0, 0.05, 0); tag(pelvis, 'legs');
 
   // ── LEGS: thigh + knee ring + shin + armored foot ──
   for (const side of [-1,1]){
     const hip = new THREE.Mesh(new THREE.SphereGeometry(0.1,12,10), glowMat);
-    hip.position.set(side*0.17, 0.0, 0); body.add(hip);
+    hip.position.set(side*0.17, 0.0, 0); tag(hip, 'legs');
     const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.11,0.6,12), armorMat);
-    thigh.position.set(side*0.17, -0.35, 0); body.add(thigh);
+    thigh.position.set(side*0.17, -0.35, 0); tag(thigh, 'legs');
     const knee = new THREE.Mesh(new THREE.TorusGeometry(0.12,0.02,8,16), glowMat);
-    knee.position.set(side*0.17, -0.65, 0); knee.rotation.x = Math.PI/2; body.add(knee);
+    knee.position.set(side*0.17, -0.65, 0); knee.rotation.x = Math.PI/2; tag(knee, 'legs');
     const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.09,0.6,12), steelMat);
-    shin.position.set(side*0.17, -0.95, 0); body.add(shin);
+    shin.position.set(side*0.17, -0.95, 0); tag(shin, 'legs');
     const foot = new THREE.Mesh(new THREE.BoxGeometry(0.26,0.1,0.4), armorMat);
-    foot.position.set(side*0.17, -1.3, 0.08); body.add(foot);
+    foot.position.set(side*0.17, -1.3, 0.08); tag(foot, 'legs');
     const footGlow = new THREE.Mesh(new THREE.BoxGeometry(0.2,0.03,0.3), glowMat);
-    footGlow.position.set(side*0.17, -1.24, 0.1); body.add(footGlow);
+    footGlow.position.set(side*0.17, -1.24, 0.1); tag(footGlow, 'legs');
   }
 
   // ── CAPE / CLOAK behind (cyber-mystic) ──
   const cape = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.6, 0.1), darkMat);
-  cape.position.set(0, 0.2, -0.38); cape.rotation.x = 0.12; body.add(cape);
+  cape.position.set(0, 0.2, -0.38); cape.rotation.x = 0.12; tag(cape, 'cape');
   const capeGlow = new THREE.Mesh(new THREE.BoxGeometry(0.6, 1.4, 0.02), glowMat);
-  capeGlow.position.set(0, 0.2, -0.32); capeGlow.material.opacity = 0.15; body.add(capeGlow);
+  capeGlow.position.set(0, 0.2, -0.32); capeGlow.material.opacity = 0.15; tag(capeGlow, 'cape');
 
   // ── wireframe silhouette overlay (digital body) ──
   const wire = new THREE.Mesh(
     new THREE.BoxGeometry(0.7, 2.2, 0.5),
     new THREE.MeshBasicMaterial({ color:CYAN, wireframe:true, transparent:true, opacity:0.18, blending:THREE.AdditiveBlending })
   );
-  wire.position.set(0, 0.3, 0); body.add(wire);
+  wire.position.set(0, 0.3, 0); tag(wire, 'torso');
 
-  body.traverse(o => { if (o.isMesh) o.userData.bodyPart = true; });
+  // store system groups + base positions for explode/layers
+  Object.values(systems).forEach(g => body.add(g));
+  body.userData.systems = systems;
+  body.traverse(o => {
+    if (o.isMesh){
+      o.userData.bodyPart = true;
+      o.userData.basePos = o.position.clone();
+      o.userData.baseOpacity = (o.material && o.material.opacity != null) ? o.material.opacity : 1;
+    }
+  });
   return body;
 }
 
@@ -698,6 +738,7 @@ function buildSpineVisuals(){
   // body
   const body = buildHumanoidBody();
   spineGroup.add(body);
+  spineGroup.userData.body = body;
   // stage nodes — glowing squares on body parts
   STAGES.forEach((st, i) => {
     const sp = makeSquareNode({ color: st.color, size: 0.11 });
@@ -729,23 +770,24 @@ function buildSpineVisuals(){
       spineArrows.push(makeArrow(posOf(b[0]), posOf(b[1]), 0x4dabf7, b[0], b[1]));
     });
     // floating 3D stage labels above each body part
-    STAGES.forEach(st => {
-      const label = makeLabelSprite(st.name, st.color);
-      label.position.set(st.pos[0], st.pos[1] + 0.28, st.pos[2]);
-      spineGroup.add(label);
-    });
+        STAGES.forEach(st => {
+          const label = makeLabelSprite(st.name, st.color);
+          label.position.set(st.pos[0] + 0.5, st.pos[1] + 0.1, st.pos[2]);
+          label.scale.set(0.6, 0.11, 1);
+          spineGroup.add(label);
+        });
     // body<->brain data tendrils (connect the figure to the neural field)
-  const tendrilMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, transparent:true, opacity:0.22, blending:THREE.AdditiveBlending });
-  for (let i=0;i<7;i++){
-    const ang = (i/7)*Math.PI*2;
-    const curve = new THREE.CatmullRomCurve3([
-      new THREE.Vector3(0, 0.3, 0),
-      new THREE.Vector3(Math.cos(ang)*0.9, 0.3+Math.sin(ang*2)*0.35, Math.sin(ang)*0.9),
-      new THREE.Vector3(Math.cos(ang)*1.7, 0.1+Math.sin(ang*3)*0.5, Math.sin(ang)*1.7)
-    ]);
-    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.012, 4, false), tendrilMat);
-    spineGroup.add(tube);
-  }
+  const tendrilMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, transparent:true, opacity:0.10, blending:THREE.AdditiveBlending });
+    for (let i=0;i<7;i++){
+      const ang = (i/7)*Math.PI*2;
+      const curve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(0, 0.3, 0),
+        new THREE.Vector3(Math.cos(ang)*0.6, 0.3+Math.sin(ang*2)*0.25, Math.sin(ang)*0.6),
+        new THREE.Vector3(Math.cos(ang)*1.1, 0.1+Math.sin(ang*3)*0.35, Math.sin(ang)*1.1)
+      ]);
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.008, 4, false), tendrilMat);
+      spineGroup.add(tube);
+    }
   // rail
   buildSpineRail();
 }
@@ -1055,9 +1097,11 @@ function setView(v){
   currentView = v;
   brainGroup.visible = (v==='brain');
   spineGroup.visible = (v==='spine');
+  brainShell.visible = (v==='brain');
   document.getElementById('view-brain').classList.toggle('active', v==='brain');
   document.getElementById('view-spine').classList.toggle('active', v==='spine');
   document.getElementById('spine-rail').classList.toggle('visible', v==='spine');
+  document.getElementById('body-tools').classList.toggle('visible', v==='spine');
   document.getElementById('brain-badge').textContent = v==='brain' ? 'NEURAL_MESH ▸ BRAIN' : 'NEURAL_MESH ▸ SPINE';
   clearWalk();
   if (v==='brain' && meshData.nodes.length) controls.target.set(0,0.1,0);
@@ -1161,9 +1205,81 @@ function animate(){
   composer.render();
 }
 
+
+// ─── Body tools (anatomy-viewer: layers / explode / opacity) ───
+const BODY_SYSTEM_META = {
+  head:  { name:'HEAD · SPEAK',        color:'#4dabf7' },
+  torso: { name:'TORSO · DECIDE',      color:'#ff2d95' },
+  spine: { name:'SPINE · CONSOLIDATE', color:'#9775fa' },
+  arms:  { name:'ARMS · EXECUTE',      color:'#ffd43b' },
+  legs:  { name:'LEGS · GROUND',       color:'#39FF14' },
+  cape:  { name:'CAPE · FEDERATE',     color:'#00E5FF' },
+};
+let bodySystemVisible = {};
+function initBodyTools(){
+  const wrap = document.getElementById('bt-layers');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  Object.keys(BODY_SYSTEM_META).forEach(key => {
+    bodySystemVisible[key] = true;
+    const row = document.createElement('div');
+    row.className = 'bt-row';
+    row.innerHTML = `<span style="color:${BODY_SYSTEM_META[key].color}">${BODY_SYSTEM_META[key].name}</span><span class="sw on"></span>`;
+    const sw = row.querySelector('.sw');
+    sw.addEventListener('click', () => {
+      bodySystemVisible[key] = !bodySystemVisible[key];
+      sw.classList.toggle('on', bodySystemVisible[key]);
+      sw.classList.toggle('off', !bodySystemVisible[key]);
+      applyBodySystemVisibility();
+    });
+    wrap.appendChild(row);
+  });
+  document.getElementById('bt-explode').addEventListener('input', e => applyExplode(parseFloat(e.target.value)));
+  document.getElementById('bt-opacity').addEventListener('input', e => applyLayerOpacity(parseFloat(e.target.value)));
+}
+function applyBodySystemVisibility(){
+  const body = spineGroup.userData.body;
+  if (!body) return;
+  Object.keys(BODY_SYSTEM_META).forEach(key => {
+    const g = body.userData.systems[key];
+    if (g) g.visible = bodySystemVisible[key];
+  });
+}
+function applyExplode(amount){
+  const body = spineGroup.userData.body;
+  if (!body) return;
+  body.traverse(o => {
+    if (o.isMesh && o.userData.basePos){
+      const b = o.userData.basePos;
+      o.position.set(b.x*(1+amount*1.6), b.y*(1+amount*0.4), b.z*(1+amount*1.6));
+    }
+  });
+}
+function applyLayerOpacity(op){
+  const body = spineGroup.userData.body;
+  if (!body) return;
+  body.traverse(o => {
+    if (o.isMesh && o.material && o.material.transparent){
+      o.material.opacity = Math.min(1, (o.userData.baseOpacity||1) * op);
+    }
+  });
+}
+function resetBodyTools(){
+  document.getElementById('bt-explode').value = 0;
+  document.getElementById('bt-opacity').value = 1;
+  applyExplode(0); applyLayerOpacity(1);
+  Object.keys(BODY_SYSTEM_META).forEach(key => {
+    bodySystemVisible[key] = true;
+    const sw = document.querySelector('#bt-layers .bt-row .sw');
+  });
+  applyBodySystemVisibility();
+}
+
 // ─── INIT ──────────────────────────────────────
+
 fetchMesh();
 refreshInterval = setInterval(fetchMesh, 30000);
+initBodyTools();
 setView(INITIAL_VIEW);
 animate();
 window.addEventListener('resize', ()=>{
