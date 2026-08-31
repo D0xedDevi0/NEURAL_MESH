@@ -104,7 +104,15 @@
   #body-tools .bt-label { font-size:0.6rem; color:#62666d; margin-top:0.3rem; }
   #body-tools .bt-sep { border-top:1px solid rgba(0,229,255,0.12); margin:0.5rem 0; }
   #body-tools .bt-hint { font-size:0.55rem; color:#62666d; line-height:1.4; margin-top:0.4rem; }
-  @media (max-width: 700px) {
+    #body-tools .bt-search { width:100%; box-sizing:border-box; background:rgba(10,22,48,0.7); border:1px solid rgba(0,229,255,0.2); border-radius:6px; color:#d0d6e0; font-size:0.62rem; padding:0.3rem 0.5rem; margin-bottom:0.4rem; outline:none; }
+    #body-tools .bt-search:focus { border-color:#00E5FF; }
+    #body-tools .bt-axes { display:flex; gap:0.3rem; margin:0.2rem 0 0.4rem; }
+    #body-tools .bt-axis { flex:1; background:rgba(10,22,48,0.7); border:1px solid rgba(0,229,255,0.2); color:#8a8f98; border-radius:5px; font-size:0.6rem; padding:0.25rem 0; cursor:pointer; }
+    #body-tools .bt-axis.on { background:rgba(0,229,255,0.18); color:#00E5FF; border-color:#00E5FF; }
+    #body-tools .bt-pin-row { margin-top:0.3rem; }
+    #body-tools .bt-pin { background:rgba(0,229,255,0.15); border:1px solid rgba(0,229,255,0.3); color:#00E5FF; border-radius:5px; font-size:0.7rem; padding:0.2rem 0.5rem; cursor:pointer; }
+    #body-tools .bt-pin:hover { background:rgba(0,229,255,0.3); }
+    @media (max-width: 700px) {
     #body-tools { display:none !important; }
   }
 
@@ -169,13 +177,26 @@
 <div id="spine-rail"></div>
 <div id="body-tools">
   <h4>🦾 Body Systems</h4>
+  <input id="bt-search" class="bt-search" type="text" placeholder="search systems…">
   <div id="bt-layers"></div>
   <div class="bt-sep"></div>
   <div class="bt-label">explode</div>
   <input id="bt-explode" class="bt-slider" type="range" min="0" max="1" step="0.01" value="0">
   <div class="bt-label">layer opacity</div>
   <input id="bt-opacity" class="bt-slider" type="range" min="0.05" max="1" step="0.01" value="1">
-  <div class="bt-hint">toggle systems · explode the figure · fade layers to see internals</div>
+  <div class="bt-label">slice plane</div>
+  <div class="bt-axes">
+    <button id="bt-slice-x" class="bt-axis">X</button>
+    <button id="bt-slice-y" class="bt-axis">Y</button>
+    <button id="bt-slice-z" class="bt-axis">Z</button>
+    <button id="bt-slice-off" class="bt-axis on">off</button>
+  </div>
+  <input id="bt-slice-pos" class="bt-slider" type="range" min="-1.6" max="1.6" step="0.01" value="0">
+  <div class="bt-row bt-pin-row">
+    <span>pin selected part</span>
+    <button id="bt-pin" class="bt-pin">📌</button>
+  </div>
+  <div class="bt-hint">toggle systems · explode · fade layers · slice · click a part to zoom</div>
 </div>
 
 
@@ -364,6 +385,7 @@ camera.lookAt(0, 0.2, 0);
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.localClippingEnabled = true;
 renderer.toneMapping = THREE.ReinhardToneMapping;
 renderer.toneMappingExposure = 0.95;
 document.body.appendChild(renderer.domElement);
@@ -711,6 +733,7 @@ function buildHumanoidBody(){
       o.userData.bodyPart = true;
       o.userData.basePos = o.position.clone();
       o.userData.baseOpacity = (o.material && o.material.opacity != null) ? o.material.opacity : 1;
+      o.userData.baseEmissiveIntensity = (o.material && o.material.emissiveIntensity != null) ? o.material.emissiveIntensity : 0.5;
     }
   });
   return body;
@@ -884,7 +907,7 @@ let walkMode = 'bfs';
 let searchResults = [];
 
 function hitTargets(){
-  return currentView === 'brain' ? meshGroup.children : spineStageNodes.map(s=>s.mesh);
+  return currentView === 'brain' ? meshGroup.children : spineStageNodes.map(s=>s.mesh).concat(bodyPartMeshes());
 }
 
 function onPointerMove(e){
@@ -913,6 +936,12 @@ function onPointerMove(e){
         tt.style.display='block'; hovered=h; document.body.style.cursor='pointer';
         return;
       }
+      if (h.userData.bodyPart){
+        tt.innerHTML = `<div class="tt-id">🟦 ${systemNameOf(h)}</div><div class="tt-content">body system layer</div><div class="tt-meta">click to select + zoom</div>`;
+        tt.style.left = (e.clientX+14)+'px'; tt.style.top = (e.clientY+14)+'px';
+        tt.style.display='block'; hovered=h; document.body.style.cursor='pointer';
+        return;
+      }
     }
   }
   tt.style.display='none'; hovered=null; document.body.style.cursor='default';
@@ -930,6 +959,7 @@ function onPointerDown(e){
     } else {
       const st = STAGES.find(s=>s.key===obj.userData.stageKey);
       if (st) openSpineStage(st);
+      else if (obj.userData.bodyPart) selectBodyPart(obj);
     }
   } else {
     const v = new THREE.Vector3(pointer.x, pointer.y, 0.5).unproject(camera);
@@ -1224,6 +1254,7 @@ function initBodyTools(){
     bodySystemVisible[key] = true;
     const row = document.createElement('div');
     row.className = 'bt-row';
+    row.dataset.name = BODY_SYSTEM_META[key].name.toLowerCase();
     row.innerHTML = `<span style="color:${BODY_SYSTEM_META[key].color}">${BODY_SYSTEM_META[key].name}</span><span class="sw on"></span>`;
     const sw = row.querySelector('.sw');
     sw.addEventListener('click', () => {
@@ -1236,6 +1267,13 @@ function initBodyTools(){
   });
   document.getElementById('bt-explode').addEventListener('input', e => applyExplode(parseFloat(e.target.value)));
   document.getElementById('bt-opacity').addEventListener('input', e => applyLayerOpacity(parseFloat(e.target.value)));
+  document.getElementById('bt-search').addEventListener('input', e => applySearch(e.target.value));
+  document.getElementById('bt-slice-x').addEventListener('click', ()=>setSliceAxis('x'));
+  document.getElementById('bt-slice-y').addEventListener('click', ()=>setSliceAxis('y'));
+  document.getElementById('bt-slice-z').addEventListener('click', ()=>setSliceAxis('z'));
+  document.getElementById('bt-slice-off').addEventListener('click', ()=>setSliceAxis(null));
+  document.getElementById('bt-slice-pos').addEventListener('input', e => { slicePos = parseFloat(e.target.value); applySlice(); });
+  document.getElementById('bt-pin').addEventListener('click', pinSelected);
 }
 function applyBodySystemVisibility(){
   const body = spineGroup.userData.body;
@@ -1268,6 +1306,16 @@ function resetBodyTools(){
   document.getElementById('bt-explode').value = 0;
   document.getElementById('bt-opacity').value = 1;
   applyExplode(0); applyLayerOpacity(1);
+  setSliceAxis(null);
+  document.getElementById('bt-slice-pos').value = 0;
+  document.getElementById('bt-search').value = '';
+  applySearch('');
+  pins.forEach(l => spineGroup.remove(l)); pins = [];
+  if (selectedBodyPart && selectedBodyPartOrig){
+    if (selectedBodyPart.material.emissive) selectedBodyPart.material.emissive.copy(selectedBodyPartOrig);
+    if (selectedBodyPart.material.emissiveIntensity != null) selectedBodyPart.material.emissiveIntensity = selectedBodyPart.userData.baseEmissiveIntensity || 0.5;
+  }
+  selectedBodyPart = null;
   Object.keys(BODY_SYSTEM_META).forEach(key => {
     bodySystemVisible[key] = true;
     const sw = document.querySelector('#bt-layers .bt-row .sw');
@@ -1275,7 +1323,108 @@ function resetBodyTools(){
   applyBodySystemVisibility();
 }
 
+
+// ─── Body-part selection, slice, search, pin (anatomy-viewer) ───
+let selectedBodyPart = null;
+let selectedBodyPartOrig = null;
+let sliceAxis = null;   // null | 'x' | 'y' | 'z'
+let slicePos = 0;
+let slicePlane = new THREE.Plane(new THREE.Vector3(0,1,0), 0);
+let pins = [];
+function bodyPartMeshes(){
+  const b = spineGroup.userData.body;
+  if (!b) return [];
+  const arr = [];
+  b.traverse(o => { if (o.isMesh && o.userData.bodyPart) arr.push(o); });
+  return arr;
+}
+function systemNameOf(mesh){
+  const sys = mesh.userData.system;
+  return (BODY_SYSTEM_META[sys] ? BODY_SYSTEM_META[sys].name : (sys||'body'));
+}
+function selectBodyPart(mesh){
+  if (selectedBodyPart && selectedBodyPartOrig){
+    if (selectedBodyPart.material.emissive) selectedBodyPart.material.emissive.copy(selectedBodyPartOrig);
+    if (selectedBodyPart.material.emissiveIntensity != null) selectedBodyPart.material.emissiveIntensity = selectedBodyPart.userData.baseEmissiveIntensity || 0.5;
+  }
+  selectedBodyPart = mesh;
+  if (mesh){
+    if (mesh.material.emissive){
+      selectedBodyPartOrig = mesh.material.emissive.clone();
+      mesh.material.emissive.setHex(0x00E5FF);
+      mesh.material.emissiveIntensity = 1.2;
+    } else {
+      selectedBodyPartOrig = null;
+    }
+    zoomToPart(mesh);
+    openBodyPartInspector(mesh);
+  }
+}
+function openBodyPartInspector(mesh){
+  const sys = mesh.userData.system;
+  const meta = BODY_SYSTEM_META[sys] || { name: sys||'body', color:'#00E5FF' };
+  const el = document.getElementById('inspector-body');
+  el.innerHTML = `
+    <div class="insp-id" style="color:${meta.color}">🟦 ${meta.name}</div>
+    <div class="insp-content">Selected body part · system layer</div>
+    <div class="insp-meta">
+      <div><b>system</b> ${meta.name}</div>
+      <div><b>parts</b> ${bodyPartMeshes().filter(m=>m.userData.system===sys).length} meshes</div>
+      <div style="margin-top:0.4rem"><b>action</b> click 📌 to pin · drag to orbit · scroll to zoom</div>
+    </div>`;
+  document.getElementById('inspector').classList.add('open');
+}
+function zoomToPart(mesh){
+  const wp = new THREE.Vector3();
+  mesh.getWorldPosition(wp);
+  const dir = wp.clone().sub(controls.target).normalize();
+  controls.target.copy(wp);
+  camera.position.copy(wp).add(dir.multiplyScalar(2.2));
+  controls.update();
+}
+function applySlice(){
+  const body = spineGroup.userData.body;
+  if (!body) return;
+  body.traverse(o => {
+    if (o.isMesh && o.userData.bodyPart){
+      if (!sliceAxis){ o.visible = true; return; }
+      const p = o.userData.basePos;
+      const coord = sliceAxis==='x' ? p.x : sliceAxis==='y' ? p.y : p.z;
+      o.visible = coord <= slicePos;
+    }
+  });
+}
+function setSliceAxis(axis){
+  sliceAxis = axis;
+  document.querySelectorAll('#body-tools .bt-axis').forEach(b=>b.classList.toggle('on', b.id==='bt-slice-'+axis || (axis===null && b.id==='bt-slice-off')));
+  applySlice();
+}
+function pinSelected(){
+  if (!selectedBodyPart) return;
+  const wp = new THREE.Vector3();
+  selectedBodyPart.getWorldPosition(wp);
+  const label = makeLabelSprite(systemNameOf(selectedBodyPart), 0x00E5FF);
+  label.position.copy(wp).add(new THREE.Vector3(0,0.25,0));
+  spineGroup.add(label);
+  pins.push(label);
+}
+function applySearch(q){
+  q = (q||'').toLowerCase();
+  document.querySelectorAll('#bt-layers .bt-row').forEach(row => {
+    const name = row.dataset.name || '';
+    row.style.display = (!q || name.includes(q)) ? '' : 'none';
+  });
+  if (q){
+    const key = Object.keys(BODY_SYSTEM_META).find(k => BODY_SYSTEM_META[k].name.toLowerCase().includes(q));
+    if (key){
+      const g = spineGroup.userData.body && spineGroup.userData.body.userData.systems[key];
+      if (g) zoomToPart(g);
+    }
+  }
+}
+
 // ─── INIT ──────────────────────────────────────
+
 
 fetchMesh();
 refreshInterval = setInterval(fetchMesh, 30000);
