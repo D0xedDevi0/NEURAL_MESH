@@ -1,0 +1,59 @@
+🟦 NEURAL_MESH v0.29.0 is LIVE 🟦
+
+Shipped to prod: api.d0xeddev.com — 924 nodes, rust backend, all green.
+
+And it ships with a real security fix. Thread 🧵
+
+===NODE BREAK===
+
+🟦 THE SECURITY FIX 🟦
+
+x402 PaidRecallGate verified payment receipts against NIST SHA3-256 instead of Ethereum Keccak-256.
+
+Different selectors: 0x378c745b vs the correct 0x23d1ad26.
+
+Every legit receipt would've been rejected on-chain.
+
+===NODE BREAK===
+
+🟦 The fix: proper _keccak256() — pycryptodome when available, plus pure-Python Keccak-f[1600] fallback so core stays pip-free. Both paths tested byte-identical.
+
+Selector verified live on prod: 0x23d1ad26 ✅
+
+===NODE BREAK===
+
+🟦 NEW: Mesh.fused_recall() 🟦
+
+Reciprocal-rank fusion of dense retrieval × resonance (spreading activation).
+
+Honest verdict after real-embedder run: tie with dense on MRR. Default stays dense — we don't ship vibes.
+
+===NODE BREAK===
+
+🟦 But under a generative judge, resonance WINS end-to-end:
+
+F1 0.344 vs dense 0.326
+EM 0.250 vs dense 0.200
+
+Spreading activation surfaces answer-bearing context flat ranking misses. The "resonance is 5x worse" era is dead.
+
+===NODE BREAK===
+
+🟦 Also repaired: ERC-8004 reputation sync was dead on arrival TWICE (stats KeyError + empty-mesh bug).
+
+Now reads live mesh:
+🟦 signal 87/100
+🟦 mean trust 0.869 / 252 nodes
+🟦 zero quarantined
+
+On-chain execute stays GO-gated.
+
+===NODE BREAK===
+
+🟦 Banked honestly too: query-rewrite = tie (MRR 0.2758 vs 0.277). Stays opt-in, default off.
+
+222 tests green. Commit c7f6509c, tagged v0.29.0, pushed, deployed.
+
+Try it: api.d0xeddev.com/brain
+
+Built on @base 😎🚀

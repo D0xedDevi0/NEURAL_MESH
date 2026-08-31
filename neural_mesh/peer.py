@@ -128,6 +128,49 @@ class PeerClient:
         """Shortcut: get /health."""
         return self._send("GET", "/health")
 
+    def paid_recall(self, query: str, *, tier: str = "basic",
+                    proof_header: str = "", top_k: int = 5,
+                    mode: str = "resonance") -> dict:
+        """Pay-gated recall on the peer mesh (x402).
+
+        Sends the payment proof as ``X-Payment-Proof`` and the tier as
+        ``X-Recall-Tier`` headers to ``POST /mesh/recall-paid``. The peer verifies
+        the receipt on-chain (or in dry-run) before returning results.
+        """
+        headers = {"Content-Type": "application/json"}
+        body = {"query": query, "top_k": top_k, "mode": mode}
+        if proof_header:
+            headers["X-Payment-Proof"] = proof_header
+        if tier:
+            headers["X-Recall-Tier"] = tier
+        url = self.base_url + "/mesh/recall-paid"
+        req = urllib.request.Request(
+            url, data=json.dumps(body).encode(), headers=headers, method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            msg = f"peer HTTP {e.code} on /mesh/recall-paid"
+            try:
+                body = json.loads(e.read())
+                msg += f": {body.get('error', str(body))}"
+            except Exception:
+                pass
+            raise PeerError(msg) from e
+        except urllib.error.URLError as e:
+            raise PeerError(f"peer unreachable /mesh/recall-paid: {e.reason}") from e
+
+    def reputation(self, tag: str = "starred", agent_id: str = "") -> dict:
+        """Fetch the peer's ERC-8004 reputation signal (public feed).
+
+        Returns the raw JSON from ``GET /mesh/erc8004/reputation`` — a dict with
+        ``value`` / ``tag1`` / ``agent_id`` when the peer exposes it.
+        """
+        path = f"/mesh/erc8004/reputation?tag1={tag}"
+        if agent_id:
+            path += f"&agent_id={agent_id}"
+        return self._send("GET", path)
+
 
 def discover_peer(base_url: str, token: str | None = None) -> PeerClient:
     """Convenience: create a PeerClient and fetch its manifest in one call."""

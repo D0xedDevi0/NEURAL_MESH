@@ -506,6 +506,33 @@ GENERATIVE LLM JUDGE  (real retrieval, 100 queries, top_k=5, model=deepseek-v4-f
 - 🟦 **Security fix:** x402 `PaidRecallGate` verified receipts against the WRONG function selector — NIST SHA3-256 (`0x378c745b`) instead of Ethereum Keccak-256 (**`0x23d1ad26`**). Every legitimate payment receipt would have been rejected. Fixed with a pure-Python keccak fallback (core stays pip-free); tests updated.
 - 🟦 **ERC-8004 reputation sync repaired**: dry-run now reads the live mesh (signal value 87/100, mean trust 0.869 over 252 nodes, zero quarantined). On-chain `--execute` remains GO-gated (ReputationRegistry address TBD).
 
+## 🟦 v0.30.0 — Federated x402 Memory Economy (2026-08-31)
+
+- 🟦 **`neural_mesh/federation.py` — `FederatedRecall` orchestrator**: turns the
+  mesh from one brain into a *network* of agents that can't fake their memory.
+  The loop: **discover** peers → **reputation-gate** (fail-closed on unknown,
+  refuse below `min_rep`, cap trust by reputation) → **pay + recall** per peer
+  via x402 receipts → **merge** (dedupe by content hash, corroborate matching
+  facts: trust = `1-(1-t_a)(1-t_b)`) → **consensus** (highest-trust claim wins
+  each conflict_group; contradictors stay visible, never dropped).
+- 🟦 **`PeerClient.paid_recall()` + `PeerClient.reputation()`**: the federation
+  client now composes with the x402 gate (sends `X-Payment-Proof` +
+  `X-Recall-Tier`) and reads a peer's ERC-8004 reputation feed.
+- 🟦 **`demos/federation_economy.py`** — 3-mesh showcase (buyer A + high-rep
+  peer B + low-rep contradicting peer C). Real printed numbers: rep gate refuses
+  C, pays B $0.01, corroborated fact lifts local trust 0.60 → **0.938**, and the
+  lone 0.95-trust contradiction stays ranked below it. Zero deps, zero gas
+  (dry-run mock receipts; real mode swaps on-chain verify).
+- 🟦 **`POST /mesh/federated/recall`** (AUTH, x402-gated): query this mesh as a
+  paid federated peer, returning the trust-weighted consensus report. Peers come
+  from `NEURAL_MESH_FEDERATED_PEERS` env. Manifest `capabilities` + federated
+  endpoint advertised for peer discovery.
+- 🟦 **10 new tests** (`tests/test_federation.py`) — reputation gate, cap_trust
+  scaling, replay-safety, corroboration lift, consensus-over-contradiction,
+  low-rep refusal, provenance preservation, writeback. Full regression:
+  **232 tests OK**.
+
+
 ### LongMemEval retrieval grounding (honest, in progress)
 
 We run the canonical **LongMemEval** (500-case long-term conversational memory)

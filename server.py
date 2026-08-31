@@ -33,7 +33,7 @@ AUTH_ENDPOINTS = {"add", "memory_cycle", "sleep_mesh", "consolidate_mesh",
                   "pointer_put", "pointer_summary", "dream", "export_mesh",
                   "merge", "stamp", "intuition_ingest_receipts", "eval_qa",
                   "yantrikdb_ingest", "yantrikdb_think", "helixa_attest_node",
-                  "peer_query", "mesh_audit"}
+                  "peer_query", "mesh_audit", "federated_recall"}
 POLICY_FIELDS = {"trust", "cap_trust", "allow_new", "allow_merge"}
 
 
@@ -99,7 +99,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.29.0",
+        "version": "0.30.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
     })
 
@@ -370,6 +370,69 @@ def recall_paid():
     return jsonify(result)
 
 
+@app.route("/mesh/federated/recall", methods=["POST"])
+def federated_recall():
+    """v0.30.0 — paid federated recall across a configured peer mesh registry.
+
+    Query THIS mesh as a paid federated peer: reputation-gate, x402-verify,
+    recall, and return a trust-weighted consensus report. Auth-gated (token).
+
+    Headers:
+      X-Payment-Proof: x402 receipt tx hash on Base Mainnet (required)
+      X-Recall-Tier: basic|deep|ultra (default: basic)
+
+    Body: {query, top_k?, include_local?}
+    """
+    from neural_mesh.federation import FederatedRecall
+
+    proof = request.headers.get("X-Payment-Proof", "").strip()
+    tier = request.headers.get("X-Recall-Tier", "basic").strip().lower()
+    data = request.get_json(silent=True) or {}
+    query = data.get("query", "").strip()
+
+    if not proof:
+        return _json_error("X-Payment-Proof header required (x402 receipt tx hash)", 402)
+    if not query:
+        return _json_error("query is required", 400)
+
+    # Configured peers come from env (comma-separated base URLs) + optional rep
+    # scores (comma-separated, aligned). Absent → self only (still returns a
+    # valid local-consensus report so the endpoint is never a dead end).
+    peer_urls = [u for u in
+                 os.environ.get("NEURAL_MESH_FEDERATED_PEERS", "").split(",")
+                 if u.strip()]
+    rep_str = os.environ.get("NEURAL_MESH_FEDERATED_PEER_REPS", "")
+    reps = [float(x) for x in rep_str.split(",") if x.strip()] if rep_str else []
+
+    try:
+        fed = FederatedRecall(
+            mesh,
+            min_rep=float(os.environ.get("NEURAL_MESH_FEDERATED_MIN_REP", "50")),
+            cap_trust=float(os.environ.get("NEURAL_MESH_FEDERATED_CAP_TRUST", "0.9")),
+            dry_run=os.environ.get("NEURAL_MESH_FEDERATED_DRY_RUN", "1") == "1",
+        )
+        from neural_mesh.peer import PeerClient
+        for i, u in enumerate(peer_urls):
+            rep = reps[i] if i < len(reps) else None
+            try:
+                fed.discover(u, token=os.environ.get("NEURAL_MESH_PEER_TOKEN", ""),
+                             rep=rep)
+            except Exception as e:
+                fed.add_peer(PeerClient(u), rep=rep if rep is not None else 0.0)
+        report = fed.federated_recall(
+            query,
+            top_k=int(data.get("top_k", 5)),
+            tier=tier,
+            include_local=bool(data.get("include_local", True)),
+        )
+    except Exception as e:
+        return _json_error(f"federation error: {e}", 500)
+
+    if not report.get("ok"):
+        return jsonify(report), 402
+    return jsonify(report)
+
+
 @app.route("/mesh/cycle", methods=["POST"])
 def memory_cycle():
     """Run pointer-safe ingest → routed recall → lanes → sleep.
@@ -637,7 +700,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.29.0",
+        "version": "0.30.0",
         "provenance_breakdown": provenance_breakdown,
     })
 
@@ -703,7 +766,7 @@ def erc8004_manifest():
             "crypto-economic",
             "cross-source-corroboration",
         ],
-        "version": "0.29.0",
+        "version": "0.30.0",
     })
 
 
@@ -873,8 +936,10 @@ def peer_manifest():
             "subgraph_query",
             "intuition_export",
             "dream_preview",
+            "federated_recall",
         ],
         "query_endpoint": "/mesh/peer/query",
+        "federated_endpoint": "/mesh/federated/recall",
     })
 
 

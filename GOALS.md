@@ -278,6 +278,75 @@ python3 scripts/erc8004_reputation_sync.py --dry-run
 
 ---
 
+## Goal 7 — v0.30.0: Federated x402 Memory Economy 🟦 IN PROGRESS (2026-08-31)
+
+**Status:** 🟦 BUILDING — this is the "next layer" that turns NEURAL_MESH from a
+single brain into a *network* of agents that can't fake their memory.
+
+**Outcome:** prove and ship the full cross-agent memory-economy loop end to end:
+agents **discover** each other, **reputation-gate** who they'll trust, **pay** per
+recall via x402 receipts (Base), **recall** each other's memory, and
+**corroborate** matching facts so trust compounds (`1-(1-t_a)(1-t_b)`). The mesh
+becomes the substrate for "agents that can't fake their settle" — every pulse a
+receipt, every reflex settled USDC. This is the story Cody is already telling on
+X; this milestone makes it real, testable, and shipped.
+
+**Why this layer:** the pieces already exist but are **inert**:
+- `x402_recall.py` `PaidRecallGate` — built, tested, but no consumers.
+- `peer.py` `PeerClient` — federation client, single-agent only.
+- `reputation.py` — ERC-8004 signals, off-chain only.
+- `sharing.py` `merge_peer_mesh` / `consensus_rank` — file-based, not networked.
+
+None of them compose. This goal composes them into one orchestrator +
+server endpoint + demo + tests, so a remote agent can *pay to query* the mesh
+and the result is trust-weighted, provenance-stamped, corroboration-bumped.
+
+### Deliverables
+🟦 `neural_mesh/federation.py` — `FederatedRecall` orchestrator:
+  1. **Discover** peers via `PeerClient.discover()` (manifest + capabilities).
+  2. **Reputation-gate**: query each peer's ERC-8004 reputation signal; cap
+     trust by reputation (low-rep peer → `cap_trust` floor). Refuse to pay
+     peers below a `min_rep` threshold.
+  3. **Pay + recall**: for each trusted peer, issue `paid_recall` with an x402
+     proof (real on-chain verify, or a test/mock proof in dry-run mode).
+  4. **Merge + corroborate**: collect ranked hits, dedupe by content hash,
+     fuse matching facts via corroboration math, run `consensus_rank` so the
+     highest-trust claim wins per conflict_group.
+  5. **Report**: per-peer payment, provenance, trust caps, corroboration bumps,
+     final consensus-ranked list with proof cards.
+🟦 `demos/federation_economy.py` — 3 in-memory meshes (Agent A buyer + Peer B/C
+sellers with overlapping + contradicting facts), full loop, real printed numbers
+(trust before/after corroboration, per-peer payment, consensus winner). Zero
+external deps (mock proof path). This is the "give them something to remember"
+showcase.
+🟦 `tests/test_federation.py` — RED→GREEN: gate refuses low-rep/unknown peer,
+cap_trust honored, corroboration lift, consensus winner over contradiction,
+replay-safe, merge keeps provenance.
+🟦 `POST /mesh/federated/recall` server endpoint (AUTH) — query this mesh as a
+paid federated peer, x402-gated, returning the full merged consensus report.
+🟦 Manifest `capabilities` gains `"federated_recall"`.
+
+### Acceptance criteria
+🟦 Demo runs end-to-end with real numbers, no external deps.
+🟦 New tests GREEN; full regression (222+ OK) still passes.
+🟦 Live endpoint returns a valid federation report on the real mesh.
+🟦 Version bumped v0.30.0 in all 4 locations; clean package install; deployed;
+`/health` + endpoints verified.
+🟦 X announcement posts (this milestone AND the missed v0.29).
+
+### Verification
+```bash
+PYTHONPATH=. python3 demos/federation_economy.py
+PYTHONPATH=. python3 -m unittest tests.test_federation -v
+PYTHONPATH=. python3 -m unittest discover -s tests
+curl -s -X POST https://api.d0xeddev.com/mesh/federated/recall \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -H "X-Payment-Proof: <receipt-tx>" -H "X-Recall-Tier: basic" \
+  -d '{"query":"Base L2 scaling","top_k":5}'
+```
+
+---
+
 ## Cross-cutting contracts (apply to EVERY stage)
 
 ### Honest benchmark contract (non-negotiable)

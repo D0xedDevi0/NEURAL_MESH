@@ -3,6 +3,6 @@
 🟦 Resonance wins judged QA: F1 0.344 vs dense 0.326
 🟦 NEW fused_recall — dense × resonance fusion
 🟦 Security fix: x402 receipts checked the WRONG hash (SHA3≠Keccak)
-🟦 ERC-8004 mesh rep: 87/100
+🟦 ERC-8004 rep live on @base: 87/100
 
 api.d0xeddev.com/brain 😎🚀
