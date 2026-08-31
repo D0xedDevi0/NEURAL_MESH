@@ -201,6 +201,7 @@ let nodeMap = {};       // id -> {three, data}
 let linkLines = [];
 let linkGroup = new THREE.Group();
 let helixaGroup = new THREE.Group();
+let ambientGroup = new THREE.Group();
 
 // Memory-mode (type) palette — the "firing synapse" colors
 const TYPE_COLORS = {
@@ -216,7 +217,7 @@ async function fetchMesh() {
   try {
     const [statsRes, pubRes] = await Promise.all([
       fetch(API+'/stats').then(r=>r.json()),
-      fetch(API+'/public?limit=400').then(r=>r.json())
+      fetch(API+'/public?limit=800').then(r=>r.json())
     ]);
     meshData.stats = statsRes;
     const results = pubRes.results || [];
@@ -368,12 +369,54 @@ starsGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
 const stars = new THREE.Points(starsGeo, new THREE.PointsMaterial({ size:0.03, color:0xffffff, transparent:true, opacity:0.18, blending:THREE.AdditiveBlending }));
 scene.add(stars);
 
+// ─── BRAIN SHELL — faint wireframe silhouette so the brain shape reads ──
+const brainShell = new THREE.Group();
+scene.add(brainShell);
+function buildBrainShell(){
+  while (brainShell.children.length) brainShell.remove(brainShell.children[0]);
+  const shellMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.045, blending:THREE.AdditiveBlending });
+  // hemispheres (scaled to match buildBrainVisuals: x*1.85, y*1.3+0.1, z*1.85)
+  const hemi = (sx,sy,sz,cx,cy,cz) => {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(1, 26, 18), shellMat);
+    m.scale.set(sx,sy,sz); m.position.set(cx,cy,cz); brainShell.add(m);
+  };
+  hemi(1.37,1.3,1.63,-1.02,0.26,0);
+  hemi(1.37,1.3,1.63, 1.02,0.26,0);
+  const cb = new THREE.Mesh(new THREE.SphereGeometry(1,22,14), shellMat);
+  cb.scale.set(1.15,0.52,0.81); cb.position.set(0,-0.91,-1.07); brainShell.add(cb);
+  const stem = new THREE.Mesh(new THREE.CylinderGeometry(0.31,0.22,1.4,14), shellMat);
+  stem.position.set(0,-1.3,0); brainShell.add(stem);
+  // dense inner neural wireframe (gyri / cortical detail)
+  const innerMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.06, blending:THREE.AdditiveBlending });
+  const inner = new THREE.Mesh(new THREE.SphereGeometry(1, 42, 30), innerMat);
+  inner.scale.set(1.32,1.22,1.52); inner.position.set(0,0.1,0); brainShell.add(inner);
+  // central fissure plane
+  const fissure = new THREE.Mesh(new THREE.BoxGeometry(0.02,1.7,1.3), innerMat);
+  fissure.position.set(0,0.1,0); brainShell.add(fissure);
+  // cortical fold arcs across each hemisphere
+  const foldMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.05, blending:THREE.AdditiveBlending });
+  for (let fi=0; fi<4; fi++){
+    const fold = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), foldMat);
+    fold.scale.set(0.5,0.9,0.9); fold.position.set((fi%2? -1:1)*0.55, 0.1+fi*0.12, 0.1); brainShell.add(fold);
+  }
+  // soft aura glow behind the whole brain
+  const auraTex = (()=>{ const c=document.createElement('canvas'); c.width=c.height=256;
+    const g=c.getContext('2d'); const gr=g.createRadialGradient(128,128,20,128,128,128);
+    gr.addColorStop(0,'rgba(0,229,255,0.35)'); gr.addColorStop(0.5,'rgba(0,229,255,0.10)'); gr.addColorStop(1,'rgba(0,229,255,0)');
+    g.fillStyle=gr; g.fillRect(0,0,256,256); return new THREE.CanvasTexture(c); })();
+  const aura = new THREE.Sprite(new THREE.SpriteMaterial({ map:auraTex, transparent:true, opacity:0.5, depthWrite:false, blending:THREE.AdditiveBlending }));
+  aura.scale.set(7,5.5,1); aura.position.set(0,0.1,-1.2); brainShell.add(aura);
+  brainShell.userData.aura = aura;
+}
+buildBrainShell();
+
 // ─── BRAIN GROUP ───────────────────────────────
 const brainGroup = new THREE.Group();
 scene.add(brainGroup);
 const meshGroup = new THREE.Group(); brainGroup.add(meshGroup);
 brainGroup.add(linkGroup);
 brainGroup.add(helixaGroup);
+brainGroup.add(ambientGroup);
 
 // Square node sprite maker — solid squares so the brain reads clearly (no additive bloom)
 function makeSquareNode(n){
@@ -398,6 +441,17 @@ function buildBrainVisuals(){
     sp.position.set(n.x, n.y, n.z);
     meshGroup.add(sp);
     nodeMap[n.id] = { three: sp, data: n };
+  }
+  // Ambient fill nodes — densify the neural field (non-interactive)
+  while (ambientGroup.children.length) ambientGroup.remove(ambientGroup.children[0]);
+  const ambMat = new THREE.SpriteMaterial({ map: squareTexture(0x00E5FF), transparent:true, opacity:0.28, depthWrite:false });
+  for (let ai=0; ai<220; ai++){
+    const p = sampleBrainPoint();
+    const asp = new THREE.Sprite(ambMat);
+    const as = 0.05 + Math.random()*0.05;
+    asp.scale.set(as, as, 1);
+    asp.position.set(p.x*1.85, p.y*1.3+0.1, p.z*1.85);
+    ambientGroup.add(asp);
   }
   // Links
   while (linkGroup.children.length) linkGroup.remove(linkGroup.children[0]);
@@ -534,6 +588,27 @@ function buildHumanoidBody(){
   // waist
   const waist = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.4), darkMat);
   waist.position.set(0, 0.28, 0); body.add(waist);
+  // abdominal armor segments
+  for (let a=0; a<3; a++){
+    const seg = new THREE.Mesh(new THREE.BoxGeometry(0.5,0.1,0.4), steelMat);
+    seg.position.set(0, 0.44 - a*0.12, 0.02); body.add(seg);
+  }
+  // ── SPINE COLUMN: segmented vertebrae + glowing discs down the back ──
+  for (let v=0; v<7; v++){
+    const y = 0.12 + v*0.16;
+    const vert = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.09,0.05,8), steelMat);
+    vert.position.set(0, y, -0.2); body.add(vert);
+    const disc = new THREE.Mesh(new THREE.TorusGeometry(0.1,0.012,6,16), glowMat);
+    disc.position.set(0, y+0.03, -0.2); disc.rotation.x = Math.PI/2; body.add(disc);
+  }
+  // circuit traces on chest
+  const circuitMat = new THREE.MeshBasicMaterial({ color:CYAN, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending });
+  const c1 = new THREE.Mesh(new THREE.BoxGeometry(0.3,0.02,0.02), circuitMat);
+  c1.position.set(0, 0.7, 0.25); body.add(c1);
+  const c2 = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.2,0.02), circuitMat);
+  c2.position.set(0.1, 0.7, 0.25); body.add(c2);
+  const c3 = new THREE.Mesh(new THREE.BoxGeometry(0.02,0.2,0.02), circuitMat);
+  c3.position.set(-0.1, 0.7, 0.25); body.add(c3);
 
   // ── SHOULDERS: angular pauldrons with glow strips ──
   for (const side of [-1,1]){
@@ -541,6 +616,8 @@ function buildHumanoidBody(){
     pauldron.position.set(side*0.44, 1.12, 0); pauldron.rotation.z = side*0.25; body.add(pauldron);
     const glowStrip = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.1, 0.3), glowMat);
     glowStrip.position.set(side*0.44, 1.12, 0.16); body.add(glowStrip);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(0.09,12,10), glowMat);
+    ball.position.set(side*0.5, 1.0, 0); body.add(ball);
   }
 
   // ── ARMS: upper + elbow ring + forearm + hand ──
@@ -549,10 +626,17 @@ function buildHumanoidBody(){
     upper.position.set(side*0.5, 0.85, 0); upper.rotation.z = side*0.1; body.add(upper);
     const elbow = new THREE.Mesh(new THREE.TorusGeometry(0.1,0.02,8,16), glowMat);
     elbow.position.set(side*0.53, 0.55, 0); elbow.rotation.x = Math.PI/2; body.add(elbow);
+    const piston = new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.2,6), steelMat);
+    piston.position.set(side*0.53, 0.4, 0.1); body.add(piston);
     const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.08,0.6,12), steelMat);
     fore.position.set(side*0.56, 0.25, 0); fore.rotation.z = side*0.08; body.add(fore);
     const hand = new THREE.Mesh(new THREE.BoxGeometry(0.12,0.14,0.12), darkMat);
     hand.position.set(side*0.58, -0.05, 0); body.add(hand);
+    // fingers
+    for (let f=0; f<3; f++){
+      const finger = new THREE.Mesh(new THREE.BoxGeometry(0.03,0.1,0.03), steelMat);
+      finger.position.set(side*0.58 + side*0.02, -0.12, -0.03 + f*0.03); body.add(finger);
+    }
   }
 
   // ── PELVIS ──
@@ -561,6 +645,8 @@ function buildHumanoidBody(){
 
   // ── LEGS: thigh + knee ring + shin + armored foot ──
   for (const side of [-1,1]){
+    const hip = new THREE.Mesh(new THREE.SphereGeometry(0.1,12,10), glowMat);
+    hip.position.set(side*0.17, 0.0, 0); body.add(hip);
     const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.11,0.6,12), armorMat);
     thigh.position.set(side*0.17, -0.35, 0); body.add(thigh);
     const knee = new THREE.Mesh(new THREE.TorusGeometry(0.12,0.02,8,16), glowMat);
@@ -588,6 +674,21 @@ function buildHumanoidBody(){
 
   body.traverse(o => { if (o.isMesh) o.userData.bodyPart = true; });
   return body;
+}
+
+function makeLabelSprite(text, hex){
+  const col = '#'+hex.toString(16).padStart(6,'0');
+  const c = document.createElement('canvas'); c.width = 512; c.height = 96;
+  const g = c.getContext('2d');
+  g.font = '700 44px "JetBrains Mono", ui-monospace, monospace';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.shadowColor = col; g.shadowBlur = 18;
+  g.fillStyle = col; g.globalAlpha = 0.95;
+  g.fillText(text, 256, 48);
+  const tex = new THREE.CanvasTexture(c);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, opacity:0.9, depthWrite:false, blending:THREE.AdditiveBlending }));
+  sp.scale.set(0.9, 0.17, 1);
+  return sp;
 }
 
 function buildSpineVisuals(){
@@ -619,9 +720,32 @@ function buildSpineVisuals(){
     spineArrows.push(makeArrow(posOf(order[i]), posOf(order[i+1]), STAGES.find(s=>s.key===order[i]).color, order[i], order[i+1]));
   }
   // branch arrows
-  branches.forEach(b => {
-    spineArrows.push(makeArrow(posOf(b[0]), posOf(b[1]), STAGES.find(s=>s.key===b[1]).color, b[0], b[1]));
-  });
+    branches.forEach(b => {
+      spineArrows.push(makeArrow(posOf(b[0]), posOf(b[1]), STAGES.find(s=>s.key===b[1]).color, b[0], b[1]));
+    });
+    // feedback-loop arrows — the agentic cycle closes back to PERCEIVE
+    const feedback = [['execute','perceive'],['federate','perceive']];
+    feedback.forEach(b => {
+      spineArrows.push(makeArrow(posOf(b[0]), posOf(b[1]), 0x4dabf7, b[0], b[1]));
+    });
+    // floating 3D stage labels above each body part
+    STAGES.forEach(st => {
+      const label = makeLabelSprite(st.name, st.color);
+      label.position.set(st.pos[0], st.pos[1] + 0.28, st.pos[2]);
+      spineGroup.add(label);
+    });
+    // body<->brain data tendrils (connect the figure to the neural field)
+  const tendrilMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, transparent:true, opacity:0.22, blending:THREE.AdditiveBlending });
+  for (let i=0;i<7;i++){
+    const ang = (i/7)*Math.PI*2;
+    const curve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(0, 0.3, 0),
+      new THREE.Vector3(Math.cos(ang)*0.9, 0.3+Math.sin(ang*2)*0.35, Math.sin(ang)*0.9),
+      new THREE.Vector3(Math.cos(ang)*1.7, 0.1+Math.sin(ang*3)*0.5, Math.sin(ang)*1.7)
+    ]);
+    const tube = new THREE.Mesh(new THREE.TubeGeometry(curve, 20, 0.012, 4, false), tendrilMat);
+    spineGroup.add(tube);
+  }
   // rail
   buildSpineRail();
 }
@@ -694,7 +818,13 @@ function fireSynapse(aId, bId, color){
   const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, opacity:1, depthWrite:false, blending:THREE.AdditiveBlending }));
   const s = 0.22; dot.scale.set(s,s,1);
   dot.position.copy(a.three.position);
-  dot.userData = { from:a.three.position.clone(), to:b.three.position.clone(), t:0, speed:0.012+Math.random()*0.008, age:0 };
+  // glowing trail behind the pulse
+  const trail = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([a.three.position.clone(), a.three.position.clone()]),
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.5, blending:THREE.AdditiveBlending })
+  );
+  scene.add(trail);
+  dot.userData = { from:a.three.position.clone(), to:b.three.position.clone(), t:0, speed:0.012+Math.random()*0.008, age:0, trail };
   scene.add(dot);
   synapsePulses.push(dot);
   // small ring at source
@@ -989,8 +1119,16 @@ function animate(){
         a.pulse.material.opacity = 0.4 + 0.5*Math.abs(Math.sin(a.t*Math.PI));
       });
       // stage node breathing
-      spineStageNodes.forEach(s=>{ s.mesh.scale.setScalar(0.22*(1+Math.sin(t*2.4+s.mesh.userData.phase||0)*0.12)); });
-    }
+            spineStageNodes.forEach(s=>{ s.mesh.scale.setScalar(0.22*(1+Math.sin(t*2.4+s.mesh.userData.phase||0)*0.12)); });
+            // pulse the vertebrae discs, heart core, and joints
+            spineGroup.traverse(o => {
+              if (o.userData && o.userData.vertebrae) o.userData.vertebrae.forEach((v,i)=>{ v.material.opacity = 0.35 + 0.3*Math.sin(t*3 + i*0.7); });
+              if (o.userData && o.userData.heart) o.userData.heart.scale.setScalar(1 + 0.25*Math.abs(Math.sin(t*2.2)));
+              if (o.userData && o.userData.joints) o.userData.joints.forEach((j,i)=>{ j.material.opacity = 0.6 + 0.35*Math.sin(t*2.6 + i*0.9); });
+            });
+          }
+          // brain aura breathing (always, subtle)
+          if (brainShell.userData.aura) brainShell.userData.aura.material.opacity = 0.4 + 0.12*Math.sin(t*0.8);
     stars.rotation.y += dt*0.015; stars.rotation.x += dt*0.003;
     const breath = 1+Math.sin(t*1.3)*0.15;
     light1.intensity = 1.5*breath; light2.intensity = 1.5*breath;
@@ -1002,15 +1140,24 @@ function animate(){
     p.scale.setScalar(p.userData.scale); p.material.opacity=p.userData.opacity; return true;
   });
   synapsePulses = synapsePulses.filter(dot=>{
-    dot.userData.age += 1; dot.userData.t += dot.userData.speed;
-    if (dot.userData.age > 140){ scene.remove(dot); return false; }
-    dot.userData.t = dot.userData.t % 1.0;
-    dot.position.lerpVectors(dot.userData.from, dot.userData.to, dot.userData.t);
-    dot.material.opacity = 0.9*Math.sin(dot.userData.t*Math.PI);
-    dot.scale.setScalar(0.2*(1+0.4*Math.sin(dot.userData.t*Math.PI)));
-    return true;
-  });
-  controls.update();
+      dot.userData.age += 1; dot.userData.t += dot.userData.speed;
+      if (dot.userData.age > 140){ scene.remove(dot); if (dot.userData.trail){ scene.remove(dot.userData.trail); dot.userData.trail.geometry.dispose(); } return false; }
+      dot.userData.t = dot.userData.t % 1.0;
+      const prev = dot.position.clone();
+      dot.position.lerpVectors(dot.userData.from, dot.userData.to, dot.userData.t);
+      dot.material.opacity = 0.9*Math.sin(dot.userData.t*Math.PI);
+      dot.scale.setScalar(0.2*(1+0.4*Math.sin(dot.userData.t*Math.PI)));
+      // extend trail from previous position to current
+      if (dot.userData.trail){
+        const pos = dot.userData.trail.geometry.attributes.position;
+        pos.setXYZ(0, prev.x, prev.y, prev.z);
+        pos.setXYZ(1, dot.position.x, dot.position.y, dot.position.z);
+        pos.needsUpdate = true;
+        dot.userData.trail.material.opacity = 0.5*Math.sin(dot.userData.t*Math.PI);
+      }
+      return true;
+          });
+        controls.update();
   composer.render();
 }
 
