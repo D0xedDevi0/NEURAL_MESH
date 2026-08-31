@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NEURAL_MESH Brain — live agentic memory mesh · v0.25.3</title>
-<meta name="description" content="NEURAL_MESH — a self-organizing, self-forgetting agentic memory mesh for AI agents. Typed memory, mesh topology, resonance retrieval, hot/cold lanes, sleep/prune, versioned truth. Live 3D brain.">
+<title>NEURAL_MESH — Brain & Spine · v0.33.0</title>
+<meta name="description" content="NEURAL_MESH — a self-organizing, self-forgetting agentic memory mesh for AI agents. Live 3D brain with firing synapses, plus the Spine: D0xed Devs' full agentic pipeline built into a humanoid digital body.">
 <link rel="canonical" href="https://api.d0xeddev.com/brain">
 <meta name="theme-color" content="#000818">
 <meta name="robots" content="index,follow">
@@ -14,19 +14,19 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="NEURAL_MESH">
 <meta property="og:url" content="https://api.d0xeddev.com/brain">
-<meta property="og:title" content="NEURAL_MESH — agentic memory mesh">
-<meta property="og:description" content="A self-organizing, self-forgetting memory mesh for AI agents. Typed memory · resonance retrieval · hot/cold lanes · versioned truth · Rust hot path. Drag the live brain.">
+<meta property="og:title" content="NEURAL_MESH — Brain & Spine">
+<meta property="og:description" content="A self-organizing, self-forgetting memory mesh. Firing-synapse brain + the Spine: D0xed Devs' agentic pipeline in a humanoid body.">
 <meta property="og:image" content="https://api.d0xeddev.com/brain/og.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta property="og:image:type" content="image/png">
-<meta property="og:image:alt" content="NEURAL_MESH brain mesh — live agentic memory, rust backend, v0.25.3">
+<meta property="og:image:alt" content="NEURAL_MESH brain mesh + agentic spine, v0.33.0">
 <!-- Twitter -->
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="NEURAL_MESH — agentic memory mesh">
-<meta name="twitter:description" content="Self-organizing · self-forgetting memory for AI agents. Typed lanes, resonance retrieval, versioned truth, Rust hot path. Drag the live brain.">
+<meta name="twitter:title" content="NEURAL_MESH — Brain & Spine">
+<meta name="twitter:description" content="Firing-synapse brain + the Spine: D0xed Devs' agentic pipeline in a humanoid body. Drag it.">
 <meta name="twitter:image" content="https://api.d0xeddev.com/brain/og.png">
-<meta name="twitter:image:alt" content="NEURAL_MESH brain mesh — live agentic memory, rust backend, v0.25.3">
+<meta name="twitter:image:alt" content="NEURAL_MESH brain mesh + agentic spine, v0.33.0">
 <style>
   * { margin:0; padding:0; box-sizing:border-box; }
   body { background:#000818; color:#d0d6e0; font-family:'Inter',system-ui,-apple-system,sans-serif; overflow:hidden; height:100vh; width:100vw; }
@@ -43,23 +43,17 @@
   .hud-card .value { font-size:1.4rem; font-weight:590; color:#f7f8f8; }
   .hud-card .sub { font-size:0.7rem; color:#8a8f98; margin-top:0.15rem; }
   #stats-grid { display:flex; gap:0.6rem; flex-wrap:wrap; }
-  #legend { position:fixed; bottom:1.5rem; left:1.5rem; z-index:10; display:flex; gap:1rem; flex-wrap:wrap; }
+  #legend { position:fixed; bottom:1.5rem; left:1.5rem; z-index:10; display:flex; gap:0.6rem; flex-wrap:wrap; max-width:70vw; }
   .legend-item { display:flex; align-items:center; gap:0.4rem; font-size:0.7rem; color:#8a8f98; background:rgba(8,12,32,0.85); border:1px solid rgba(0,229,255,0.1); border-radius:6px; padding:0.35rem 0.7rem; backdrop-filter:blur(8px); }
-  .legend-dot { width:8px; height:8px; border-radius:50%; }
-  .legend-dot.hot { background:#ff6b35; box-shadow:0 0 6px #ff6b35; }
-  .legend-dot.cold { background:#4dabf7; box-shadow:0 0 6px #4dabf7; }
-  .legend-dot.dream { background:#9775fa; box-shadow:0 0 6px #9775fa; }
-  #tooltip { position:fixed; z-index:20; pointer-events:none; background:rgba(10,14,40,0.96); border:1px solid rgba(0,229,255,0.25); border-radius:8px; padding:0.6rem 0.8rem; font-size:0.72rem; max-width:280px; display:none; backdrop-filter:blur(16px); line-height:1.4; box-shadow:0 0 20px rgba(0,229,255,0.15); }
+  .legend-sq { width:10px; height:10px; border-radius:2px; box-shadow:0 0 6px currentColor; }
+  #tooltip { position:fixed; z-index:20; pointer-events:none; background:rgba(10,14,40,0.96); border:1px solid rgba(0,229,255,0.25); border-radius:8px; padding:0.6rem 0.8rem; font-size:0.72rem; max-width:300px; display:none; backdrop-filter:blur(16px); line-height:1.4; box-shadow:0 0 20px rgba(0,229,255,0.15); }
   #tooltip .tt-id { font-family:'JetBrains Mono',monospace; font-size:0.65rem; color:#00E5FF; }
   #tooltip .tt-content { color:#d0d6e0; margin-top:0.25rem; }
   #tooltip .tt-meta { color:#8a8f98; font-size:0.65rem; margin-top:0.2rem; }
   #brain-badge { position:fixed; top:20px; right:20px; z-index:10; color:rgba(0,229,255,0.7); font-size:10px; letter-spacing:3px; text-align:right; pointer-events:none; font-family:'JetBrains Mono',monospace; }
   .instructions { position:fixed; bottom:1.5rem; right:1.5rem; z-index:10; font-size:0.65rem; color:#62666d; background:rgba(8,12,32,0.7); padding:0.4rem 0.7rem; border-radius:6px; border:1px solid rgba(0,229,255,0.08); }
-  #mobile-detail { display:none; position:fixed; left:0.75rem; right:0.75rem; bottom:4rem; z-index:30; background:rgba(10,14,40,0.97); border:1px solid rgba(0,229,255,0.25); border-radius:12px; padding:0.8rem 2.4rem 0.8rem 0.9rem; font-size:0.75rem; line-height:1.45; backdrop-filter:blur(16px); box-shadow:0 12px 36px rgba(0,0,0,0.45); }
-  #mobile-detail.open { display:block; }
-  #mobile-detail-close { position:absolute; top:0.45rem; right:0.55rem; width:32px; height:32px; border:1px solid rgba(0,229,255,0.2); border-radius:50%; background:rgba(255,255,255,0.04); color:#d0d6e0; font-size:1rem; }
   #search-bar { position:fixed; top:0; left:50%; transform:translateX(-50%); z-index:11; display:flex; gap:0.5rem; align-items:center; margin-top:1.5rem; background:rgba(8,12,32,0.92); border:1px solid rgba(0,229,255,0.2); border-radius:12px; padding:0.5rem 0.6rem 0.5rem 0.9rem; backdrop-filter:blur(14px); box-shadow:0 0 24px rgba(0,229,255,0.12); }
-  #search-bar input { background:transparent; border:none; outline:none; color:#f7f8f8; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:0.78rem; width:220px; }
+  #search-bar input { background:transparent; border:none; outline:none; color:#f7f8f8; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:0.78rem; width:200px; }
   #search-bar input::placeholder { color:#62666d; }
   #search-bar button { background:rgba(0,229,255,0.14); border:1px solid rgba(0,229,255,0.35); color:#00E5FF; font-family:'JetBrains Mono',monospace; font-size:0.7rem; border-radius:7px; padding:0.3rem 0.7rem; cursor:pointer; }
   #search-bar button:hover { background:rgba(0,229,255,0.28); }
@@ -74,7 +68,12 @@
   #pause-btn:hover { background:rgba(0,229,255,0.2); }
   #pause-btn .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:0.35rem; vertical-align:middle; }
   #pause-timer { position:fixed; top:84px; right:224px; z-index:11; font-family:'JetBrains Mono',monospace; font-size:0.58rem; color:#8a8f98; background:rgba(8,12,32,0.85); border-radius:5px; padding:0.2rem 0.5rem; display:none; border:1px solid rgba(0,229,255,0.15); }
-  #inspector { position:fixed; top:50%; right:1.5rem; transform:translateY(-50%); z-index:30; width:320px; max-width:86vw; max-height:70vh; overflow-y:auto; background:rgba(10,14,40,0.97); border:1px solid rgba(0,229,255,0.28); border-radius:14px; padding:1rem; display:none; backdrop-filter:blur(18px); box-shadow:0 12px 48px rgba(0,0,0,0.5); }
+  /* View switcher (BRAIN / SPINE) */
+  #view-switch { position:fixed; top:1.5rem; left:50%; transform:translateX(-50%); z-index:12; display:flex; gap:2px; background:rgba(8,12,32,0.92); border:1px solid rgba(0,229,255,0.22); border-radius:10px; padding:3px; backdrop-filter:blur(14px); }
+  #view-switch button { font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:#8a8f98; background:transparent; border:none; padding:0.4rem 1rem; border-radius:8px; cursor:pointer; letter-spacing:0.04em; }
+  #view-switch button.active { color:#00E5FF; background:rgba(0,229,255,0.16); box-shadow:inset 0 0 0 1px rgba(0,229,255,0.3); }
+  #view-switch button:hover:not(.active) { color:#d0d6e0; }
+  #inspector { position:fixed; top:50%; right:1.5rem; transform:translateY(-50%); z-index:30; width:340px; max-width:88vw; max-height:72vh; overflow-y:auto; background:rgba(10,14,40,0.97); border:1px solid rgba(0,229,255,0.28); border-radius:14px; padding:1rem; display:none; backdrop-filter:blur(18px); box-shadow:0 12px 48px rgba(0,0,0,0.5); }
   #inspector.open { display:block; }
   #inspector .insp-id { font-family:'JetBrains Mono',monospace; font-size:0.68rem; color:#00E5FF; margin-bottom:0.4rem; }
   #inspector .insp-content { color:#f7f8f8; font-size:0.8rem; line-height:1.5; margin-bottom:0.7rem; white-space:pre-wrap; }
@@ -84,6 +83,12 @@
   #inspector-close { position:absolute; top:0.5rem; right:0.6rem; width:28px; height:28px; border:1px solid rgba(0,229,255,0.25); border-radius:50%; background:rgba(255,255,255,0.05); color:#d0d6e0; font-size:0.9rem; cursor:pointer; }
   #ticker { position:fixed; bottom:4.6rem; left:50%; transform:translateX(-50%); z-index:10; font-family:'JetBrains Mono',monospace; font-size:0.62rem; color:#8a8f98; background:rgba(8,12,32,0.8); border:1px solid rgba(0,229,255,0.08); border-radius:8px; padding:0.3rem 0.8rem; max-width:70vw; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; pointer-events:none; }
   #ticker .live { color:#00E5FF; }
+  /* Spine side stage rail */
+  #spine-rail { position:fixed; left:1.5rem; top:50%; transform:translateY(-50%); z-index:11; display:none; flex-direction:column; gap:0.35rem; font-family:'JetBrains Mono',monospace; }
+  #spine-rail.visible { display:flex; }
+  #spine-rail .stage { font-size:0.6rem; color:#62666d; background:rgba(8,12,32,0.8); border:1px solid rgba(0,229,255,0.12); border-radius:6px; padding:0.28rem 0.6rem; cursor:pointer; letter-spacing:0.05em; }
+  #spine-rail .stage:hover { color:#00E5FF; border-color:rgba(0,229,255,0.4); }
+  #spine-rail .stage.active { color:#00E5FF; background:rgba(0,229,255,0.12); }
   @media (max-width: 700px) {
     #hud { padding:0.7rem; gap:0.55rem; }
     .brand { width:100%; justify-content:space-between; }
@@ -102,6 +107,10 @@
     #mode-toggle { top:auto; bottom:5.2rem; right:0.9rem; }
     #inspector { width:92vw; max-height:50vh; top:auto; bottom:5rem; right:4vw; transform:none; }
     #ticker { display:none; }
+    #view-switch { top:0.7rem; }
+    #spine-rail { display:none !important; }
+    #pause-btn { display:none; }
+    #dream-btn { display:none; }
   }
 </style>
 </head>
@@ -110,18 +119,23 @@
 <div id="hud">
   <div class="brand">
     <h1>NEURAL_MESH</h1>
-    <span class="ver" id="version">v0.25.1</span>
+    <span class="ver" id="version">v0.33.0</span>
     <a class="repolink" href="https://github.com/BasedNUKEM/NEURAL_MESH" target="_blank" rel="noopener">github ↗</a>
   </div>
   <div id="stats-grid">
     <div class="hud-card"><div class="label">Nodes</div><div class="value" id="nodes-val">—</div><div class="sub">active mesh</div></div>
+    <div class="hud-card"><div class="label">Consolidated</div><div class="value" id="cold-val">—</div><div class="sub">cold lane</div></div>
     <div class="hud-card"><div class="label">Hot</div><div class="value" id="hot-val">—</div><div class="sub">lane</div></div>
-    <div class="hud-card"><div class="label">Cold</div><div class="value" id="cold-val">—</div><div class="sub">lane</div></div>
     <div class="hud-card"><div class="label">Links</div><div class="value" id="links-val">—</div><div class="sub">mesh edges</div></div>
   </div>
 </div>
 
 <div id="brain-badge">NEURAL_MESH ▸ CRYSTAL</div>
+
+<div id="view-switch">
+  <button id="view-brain" class="active">🧠 BRAIN</button>
+  <button id="view-spine">🦾 SPINE</button>
+</div>
 
 <div id="search-bar">
   <input id="search-input" type="text" placeholder="search the mesh…" autocomplete="off" spellcheck="false">
@@ -133,25 +147,25 @@
 <button id="pause-btn" title="Pause live feed - inspect connections freely (5-min buffer)"><span class="dot" style="background:#00E5FF"></span>pause</button>
 <span id="pause-timer"></span>
 
+<div id="spine-rail"></div>
+
 <div id="inspector">
-  <button id="inspector-close" aria-label="Close memory details" onclick="closeInspector()">×</button>
+  <button id="inspector-close" aria-label="Close details" onclick="closeInspector()">×</button>
   <div id="inspector-body"></div>
 </div>
 
 <div id="ticker"><span class="live">LIVE</span> <span id="ticker-text">connecting…</span></div>
 
 <div id="legend">
-  <div class="legend-item"><span class="legend-dot hot"></span> Hot Lane</div>
-  <div class="legend-item"><span class="legend-dot cold"></span> Cold Lane</div>
-  <div class="legend-item"><span class="legend-dot dream"></span> Dream / Muse</div>
+  <div class="legend-item"><span class="legend-sq" style="background:#00E5FF;color:#00E5FF"></span> semantic</div>
+  <div class="legend-item"><span class="legend-sq" style="background:#ff6b35;color:#ff6b35"></span> episodic</div>
+  <div class="legend-item"><span class="legend-sq" style="background:#39FF14;color:#39FF14"></span> procedural</div>
+  <div class="legend-item"><span class="legend-sq" style="background:#ff2d95;color:#ff2d95"></span> sensory</div>
+  <div class="legend-item"><span class="legend-sq" style="background:#9775fa;color:#9775fa"></span> prospective · dream</div>
 </div>
 
 <div id="tooltip"></div>
-<div id="mobile-detail" role="dialog" aria-live="polite">
-  <button id="mobile-detail-close" aria-label="Close node details" onclick="closeMobileDetail()">×</button>
-  <div id="mobile-detail-body"></div>
-</div>
-<div class="instructions"><span class="desktop-help">🖱 drag to orbit &nbsp;|&nbsp; scroll to zoom &nbsp;|&nbsp; hover nodes &nbsp;|&nbsp; click → walk the mesh</span><span class="mobile-help" style="display:none">☝ drag to orbit &nbsp;|&nbsp; pinch to zoom &nbsp;|&nbsp; tap nodes → walk</span></div>
+<div class="instructions"><span class="desktop-help">🖱 drag to orbit &nbsp;|&nbsp; scroll to zoom &nbsp;|&nbsp; hover nodes &nbsp;|&nbsp; click → walk the mesh / open a body part</span><span class="mobile-help" style="display:none">☝ drag to orbit &nbsp;|&nbsp; pinch to zoom &nbsp;|&nbsp; tap nodes</span></div>
 
 <script type="importmap">
 {
@@ -168,57 +182,52 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 // ── CAPTURE / query flags ──────────────────────
 const CAPTURE = new URLSearchParams(location.search).has('capture');
+const INITIAL_VIEW = new URLSearchParams(location.search).has('spine') ? 'spine' : 'brain';
 if (CAPTURE) {
-  // Hide all UI chrome for clean capture / OG frames
-  ['hud', 'legend', 'brain-badge'].forEach(id => {
+  ['hud','legend','brain-badge','view-switch','spine-rail','search-bar','search-status','mode-toggle','dream-btn','pause-btn','pause-timer','ticker'].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = 'none';
   });
-  document.querySelector('.instructions').style.display = 'none';
+  const ins = document.querySelector('.instructions'); if (ins) ins.style.display = 'none';
 }
 
 // ── Data layer (real mesh) ─────────────────────
 const API = '/mesh';
 let meshData = { nodes: [], links: [], stats: {} };
-let nodeMap = {};       // id -> {three: mesh, data: {...}}
-let linkLines = [];     // THREE.Line objects for mesh links
+let nodeMap = {};       // id -> {three, data}
+let linkLines = [];
 let linkGroup = new THREE.Group();
-let helixaGroup = new THREE.Group();  // purple aura rings for Helixa-verified nodes
+let helixaGroup = new THREE.Group();
+
+// Memory-mode (type) palette — the "firing synapse" colors
+const TYPE_COLORS = {
+  semantic: 0x00E5FF, episodic: 0xff6b35, procedural: 0x39FF14,
+  sensory: 0xff2d95, prospective: 0x9775fa, 'dream-muse': 0x9775fa
+};
+function typeColor(type, lane, provenance) {
+  if (lane === 'dream' || provenance === 'dream-muse') return 0x9775fa;
+  return TYPE_COLORS[type] || 0x4dabf7;
+}
 
 async function fetchMesh() {
   try {
     const [statsRes, pubRes] = await Promise.all([
       fetch(API+'/stats').then(r=>r.json()),
-      fetch(API+'/public?limit=300').then(r=>r.json())
+      fetch(API+'/public?limit=400').then(r=>r.json())
     ]);
     meshData.stats = statsRes;
     const results = pubRes.results || [];
-
-    // Lane approximation (public API has no lane field — infer like v1 brain)
     const laneFor = (i) => i % 3 === 0 ? 'cold' : 'hot';
-    const colorFor = (lane, provenance) => {
-      if (lane === 'dream' || provenance === 'dream-muse') return 0x9775fa;
-      return lane === 'hot' ? 0xff6b35 : lane === 'cold' ? 0x4dabf7 : 0x9775fa;
-    };
-    const seen = new Set();
-    const nodes = results.map((n, i) => {
-      const phi = Math.acos(1 - 2*(i+0.5)/Math.max(results.length, 1));
-      const theta = Math.PI * (1+Math.sqrt(5)) * i;
-      const r = 1.9 + Math.random()*1.6;
-      return {
-        id: n.id, content: n.content || '', type: n.type || 'semantic',
-        provenance: n.provenance || 'unknown', trust: Number(n.trust || 1.0),
-        lane: n.lane || laneFor(i), helixa: n.helixa || null, by: n.by || 'unknown',
-        x: r * Math.sin(phi) * Math.cos(theta),
-        y: r * Math.sin(phi) * Math.sin(theta) * 0.8,
-        z: r * Math.cos(phi),
-        size: 0.04 + (Number(n.trust || 1.0) * 0.05) * ((n.lane === 'dream' || n.provenance === 'dream-muse') ? 2.2 : 1),
-        color: colorFor(n.lane || laneFor(i), n.provenance)
-      };
-    });
+    const nodes = results.map((n, i) => ({
+      id: n.id, content: n.content || '', type: n.type || 'semantic',
+      provenance: n.provenance || 'unknown', trust: Number(n.trust || 1.0),
+      lane: n.lane || laneFor(i), helixa: n.helixa || null, by: n.by || 'unknown',
+      // position assigned by brain-shape sampler in buildBrainVisuals
+      size: 0.05 + (Number(n.trust || 1.0) * 0.05) * ((n.lane === 'dream' || n.provenance === 'dream-muse') ? 2.2 : 1),
+      color: typeColor(n.type, n.lane || laneFor(i), n.provenance)
+    }));
     nodeMap = {};
     meshData.nodes = nodes;
-
     // Links: shared provenance / helixa / same-lane high-trust
     meshData.links = [];
     const seenL = new Set();
@@ -234,134 +243,89 @@ async function fetchMesh() {
         if (strength > 0.3) { seenL.add(key); meshData.links.push({ a: a.id, b: b.id, strength }); }
       }
     }
-
-    // Update HUD
     document.getElementById('nodes-val').textContent = nodes.length;
     document.getElementById('hot-val').textContent = nodes.filter(n=>n.lane==='hot').length;
-    document.getElementById('cold-val').textContent = nodes.filter(n=>n.lane==='cold').length;
+    document.getElementById('cold-val').textContent = (statsRes.consolidated || nodes.filter(n=>n.lane==='cold').length);
     document.getElementById('links-val').textContent = meshData.links.length;
-    document.getElementById('version').textContent = 'v'+(statsRes.version||'0.21.0');
-
-    buildMeshVisuals();
-  } catch(e) {
-    console.warn('Mesh fetch:', e.message);
-  }
+    document.getElementById('version').textContent = 'v'+(statsRes.version||'0.33.0');
+    buildBrainVisuals();
+    buildSpineVisuals();
+  } catch(e) { console.warn('Mesh fetch:', e.message); }
 }
 
-// Rebuild 3D visuals for mesh nodes + links
-function buildMeshVisuals() {
-  // Remove old mesh nodes
-  while (meshGroup.children.length) meshGroup.remove(meshGroup.children[0]);
-  nodeMap = {};
-  for (const n of meshData.nodes) {
-    const geo = new THREE.SphereGeometry(n.size, 16, 16);
-    const mat = new THREE.MeshPhongMaterial({
-      color: n.color, emissive: n.color, emissiveIntensity: (n.lane === 'dream' || n.provenance === 'dream-muse') ? 1.2 : 0.55,
-      shininess: 60, specular: 0xffffff
-    });
-    const sphere = new THREE.Mesh(geo, mat);
-    sphere.position.set(n.x, n.y, n.z);
-    sphere.userData = { nodeId: n.id, phase: Math.random()*Math.PI*2, basePos: new THREE.Vector3(n.x, n.y, n.z) };
-    meshGroup.add(sphere);
-    nodeMap[n.id] = { three: sphere, data: n };
-  }
-  // Links
-  while (linkGroup.children.length) linkGroup.remove(linkGroup.children[0]);
-  linkLines = [];
-  for (const l of meshData.links) {
-    const a = nodeMap[l.a], b = nodeMap[l.b];
-    if (!a || !b) continue;
-    const geo = new THREE.BufferGeometry().setFromPoints([a.three.position, b.three.position]);
-    const mat = new THREE.LineBasicMaterial({ color: 0x0a3a5a, transparent: true, opacity: 0.06 + l.strength*0.10, blending: THREE.AdditiveBlending });
-    const line = new THREE.Line(geo, mat);
-    linkGroup.add(line);
-    linkLines.push(line);
-  }
-  // Helixa aura rings — verified-agent memories get a pulsing purple halo
-  while (helixaGroup.children.length) helixaGroup.remove(helixaGroup.children[0]);
-  helixaAuras = [];
-  for (const n of meshData.nodes) {
-    if (!n.helixa) continue;
-    const ring = new THREE.Mesh(
-      new THREE.TorusGeometry(n.size * 2.6, n.size * 0.28, 8, 40),
-      new THREE.MeshBasicMaterial({ color: 0x9775fa, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending })
-    );
-    ring.position.set(n.x, n.y, n.z);
-    ring.userData = { phase: Math.random()*Math.PI*2, nodeId: n.id };
-    helixaGroup.add(ring);
-    helixaAuras.push(ring);
-  }
-  // Fire arrival pulses
-  for (let i = 0; i < Math.min(meshData.nodes.length, 8); i++) {
-    const n = meshData.nodes[Math.floor(Math.random()*meshData.nodes.length)];
-    firePulse(new THREE.Vector3(n.x, n.y, n.z));
-  }
-}
-
-// ── Theme ───────────────────────────────────────
+// ── THEME / scene ──────────────────────────────
 const THEMES = [
   { bg: 0x000410, accent: 0x1a5a8a, accent2: 0x661144, accent3: 0x1a4411, name: 'CRYSTAL' },
   { bg: 0x0a001a, accent: 0xa855f7, accent2: 0xec4899, accent3: 0x818cf8, name: 'NEBULA' },
-  { bg: 0x1a0a00, accent: 0xf97316, accent2: 0xef4444, accent3: 0xfbbf24, name: 'SUNSET' },
-  { bg: 0x001020, accent: 0x22d3ee, accent2: 0x06b6d4, accent3: 0x67e8f9, name: 'OCEAN' },
 ];
 let T = THEMES[0];
+let currentView = INITIAL_VIEW;   // 'brain' | 'spine'
 let frozen = false;
 let paused = false;
 let pauseTimer = null;
 let pauseEndTime = 0;
 let refreshInterval = null;
-let connectedLinks = [];  // highlighted links for selected node (pause mode)
+let connectedLinks = [];
 let pulseWaves = [];
-let helixaAuras = [];     // pulsing purple rings on Helixa-verified memories
-const LIME = 0x39FF14;    // active-node + walk-trail accent (wizard pick: bright green)
-const MAX_PULSES = 12;    // cap pulse meshes — protects FPS during heavy interaction
-const PULSE_GEO = new THREE.RingGeometry(0.03, 0.12, 32); // shared geometry (no per-pulse alloc)
+let synapsePulses = [];   // traveling synapse fire dots
+let helixaAuras = [];
+const LIME = 0x39FF14;
+const MAX_PULSES = 12;
+const PULSE_GEO = new THREE.RingGeometry(0.03, 0.12, 32);
 
-// ─── CIRCUIT TEXTURE ────────────────────────────
-function makeCircuitTexture(size, accentHex, alpha) {
-  const c = document.createElement('canvas');
-  c.width = c.height = size;
-  const ctx = c.getContext('2d');
-  ctx.fillStyle = `rgba(0,10,40,${alpha})`;
-  ctx.fillRect(0, 0, size, size);
-  const bs = size / 8;
-  ctx.strokeStyle = 'rgba(0,229,255,0.12)';
-  ctx.lineWidth = 0.5;
-  for (let x = 0; x < size; x += bs)
-    for (let y = 0; y < size; y += bs)
-      ctx.strokeRect(x+1, y+1, bs-2, bs-2);
-  ctx.strokeStyle = accentHex;
-  ctx.lineWidth = 1.5;
-  for (let i = 0; i < 18; i++) {
-    let y = Math.random() * size;
-    ctx.beginPath(); ctx.moveTo(0, y); let x = 0;
-    while (x < size * 0.95) {
-      const seg = 20 + Math.random() * 80; x += seg; ctx.lineTo(x, y);
-      if (Math.random() < 0.25) { const t = (Math.random()-0.5)*40; ctx.lineTo(x, y+t); y += t; }
-    }
-    ctx.stroke();
+// Brain volume: two hemispheres + cerebellum + brainstem (brain-shaped)
+function ellipsoid(x,y,z,cx,cy,cz,rx,ry,rz){
+  return ((x-cx)/rx)**2 + ((y-cy)/ry)**2 + ((z-cz)/rz)**2 <= 1;
+}
+function insideBrain(x,y,z){
+  const lh = ellipsoid(x,y,z, -0.55, 0.12, 0.0, 0.74, 1.0, 0.88);
+  const rh = ellipsoid(x,y,z,  0.55, 0.12, 0.0, 0.74, 1.0, 0.88);
+  const cerebrum = lh || rh;
+  const sulcus = Math.abs(x) < 0.16 && y > -0.1 && cerebrum;  // central fissure
+  const cb = ellipsoid(x,y,z, 0, -0.78, -0.58, 0.62, 0.4, 0.44); // cerebellum
+  const stem = (x*x + z*z < 0.17*0.17) && y < -0.5 && y > -1.6;  // brainstem
+  return (cerebrum && !sulcus) || cb || stem;
+}
+function sampleBrainPoint(){
+  for (let i=0;i<3000;i++){
+    const x=(Math.random()*2-1)*1.45;
+    const y=(Math.random()*2-1)*1.75;
+    const z=(Math.random()*2-1)*1.05;
+    if (insideBrain(x,y,z)) return {x,y,z};
   }
-  for (let i = 0; i < 12; i++) {
-    let x = Math.random() * size; ctx.beginPath(); ctx.moveTo(x, 0); let y = 0;
-    while (y < size * 0.95) {
-      const seg = 15 + Math.random() * 60; y += seg; ctx.lineTo(x, y);
-      if (Math.random() < 0.2) { const t = (Math.random()-0.5)*30; ctx.lineTo(x+t, y); x += t; }
-    }
-    ctx.stroke();
-  }
-  ctx.fillStyle = accentHex;
-  for (let i = 0; i < 50; i++) { ctx.beginPath(); ctx.arc(Math.random()*size, Math.random()*size, 1.5+Math.random()*2.5, 0, Math.PI*2); ctx.fill(); }
-  return new THREE.CanvasTexture(c);
+  return { x:(Math.random()-0.5)*2, y:(Math.random()-0.5)*2, z:(Math.random()-0.5)*1.5 };
 }
 
-// ─── SCENE ──────────────────────────────────────
+// Square (Base-logo) node texture — rounded square with inner square glow
+const sqCache = {};
+function squareTexture(hex){
+  if (sqCache[hex]) return sqCache[hex];
+  const c = document.createElement('canvas'); c.width=c.height=128;
+  const g = c.getContext('2d');
+  const col = '#'+hex.toString(16).padStart(6,'0');
+  // outer rounded square
+  g.shadowColor = col; g.shadowBlur = 22;
+  g.fillStyle = col; g.globalAlpha = 0.55;
+  g.beginPath(); g.roundRect(6,6,116,116,26); g.fill();
+  g.globalAlpha = 1; g.shadowBlur = 0;
+  // brighter border
+  g.lineWidth = 3; g.strokeStyle = col; g.globalAlpha=0.9;
+  g.beginPath(); g.roundRect(6,6,116,116,26); g.stroke();
+  // inner square (Base logo motif)
+  g.fillStyle = col; g.globalAlpha = 0.95;
+  g.fillRect(46,46,36,36);
+  const t = new THREE.CanvasTexture(c);
+  sqCache[hex] = t;
+  return t;
+}
+
+// ── SCENE ──────────────────────────────────────
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x000410);
-scene.fog = new THREE.FogExp2(0x000410, 0.00018);
+scene.fog = new THREE.FogExp2(0x000410, 0.00013);
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.3, 100);
-camera.position.set(4, 1.5, 6.5);
-camera.lookAt(0, 0, 0);
+camera.position.set(4, 1.6, 7.0);
+camera.lookAt(0, 0.2, 0);
 
 const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
@@ -371,15 +335,12 @@ renderer.toneMappingExposure = 1.4;
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true;
-controls.dampingFactor = 0.08;
-controls.autoRotate = true;
-controls.autoRotateSpeed = 0.25;
-controls.minDistance = 2.5;
-controls.maxDistance = 18;
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.3;
+controls.minDistance = 2.5; controls.maxDistance = 22;
+controls.target.set(0, 0.2, 0);
 if (CAPTURE) controls.autoRotate = false;
 
-// Lights
 scene.add(new THREE.AmbientLight(0x081422, 0.5));
 const light1 = new THREE.PointLight(0x1a4a7a, 1.5, 30); light1.position.set(5,5,5); scene.add(light1);
 const light2 = new THREE.PointLight(0x661144, 1.5, 25); light2.position.set(-5,-2,-3); scene.add(light2);
@@ -388,141 +349,340 @@ const light3 = new THREE.PointLight(0x1a3311, 1.0, 18); light3.position.set(0,-4
 // Starfield
 const starsGeo = new THREE.BufferGeometry();
 const starCount = 4000;
-const starPos = new Float32Array(starCount * 3);
-for (let i = 0; i < starCount; i++) {
-  const r = 15 + Math.random() * 45;
-  const theta = Math.random() * Math.PI * 2;
-  const phi = Math.acos(2 * Math.random() - 1);
-  starPos[i*3] = r * Math.sin(phi) * Math.cos(theta);
-  starPos[i*3+1] = r * Math.sin(phi) * Math.sin(theta);
-  starPos[i*3+2] = r * Math.cos(phi);
+const starPos = new Float32Array(starCount*3);
+for (let i=0;i<starCount;i++){
+  const r = 15 + Math.random()*45, theta = Math.random()*Math.PI*2, phi = Math.acos(2*Math.random()-1);
+  starPos[i*3]=r*Math.sin(phi)*Math.cos(theta); starPos[i*3+1]=r*Math.sin(phi)*Math.sin(theta); starPos[i*3+2]=r*Math.cos(phi);
 }
-starsGeo.setAttribute('position', new THREE.BufferAttribute(starPos, 3));
-const stars = new THREE.Points(starsGeo, new THREE.PointsMaterial({
-  size: 0.04, color: 0xffffff, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending
-}));
+starsGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
+const stars = new THREE.Points(starsGeo, new THREE.PointsMaterial({ size:0.04, color:0xffffff, transparent:true, opacity:0.4, blending:THREE.AdditiveBlending }));
 scene.add(stars);
 
-// ─── CUBE BRAIN ─────────────────────────────────
-// REMOVED (v0.25.1): spinning cube, edge glow, circuit lines, 100 surface
-// dots — the real 260-node mesh is the brain now. Kept: helix ladders +
-// orbit rings for depth, stars for context.
+// ─── BRAIN GROUP ───────────────────────────────
+const brainGroup = new THREE.Group();
+scene.add(brainGroup);
+const meshGroup = new THREE.Group(); brainGroup.add(meshGroup);
+brainGroup.add(linkGroup);
+brainGroup.add(helixaGroup);
 
-// ─── HELIX LADDERS ──────────────────────────────
-const helixGroup = new THREE.Group();
-scene.add(helixGroup);
-function makeHelixLadder(radius, height, turns, color, segments) {
-  const group = new THREE.Group();
-  const pts1 = [], pts2 = [];
-  for (let i = 0; i <= segments; i++) {
-    const t = (i/segments) * Math.PI * 2 * turns;
-    const y = (i/segments) * height - height/2;
-    pts1.push(new THREE.Vector3(Math.cos(t)*radius, y, Math.sin(t)*radius));
-    pts2.push(new THREE.Vector3(Math.cos(t+Math.PI)*radius*0.85, y, Math.sin(t+Math.PI)*radius*0.85));
-  }
-  const mat = new THREE.LineBasicMaterial({color, transparent:true, opacity:0.18, blending:THREE.AdditiveBlending});
-  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts1), mat));
-  group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts2), mat));
-  const rungMat = new THREE.LineBasicMaterial({color, transparent:true, opacity:0.2, blending:THREE.AdditiveBlending});
-  for (let i = 0; i < pts1.length; i += 8)
-    group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints([pts1[i], pts2[i]]), rungMat));
-  return group;
+// Square node sprite maker
+function makeSquareNode(n){
+  const tex = squareTexture(n.color);
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity:1, depthWrite:false, blending:THREE.AdditiveBlending });
+  const sp = new THREE.Sprite(mat);
+  const s = n.size * 2.6;
+  sp.scale.set(s, s, 1);
+  sp.userData = { nodeId: n.id, phase: Math.random()*Math.PI*2, baseScale: s };
+  return sp;
 }
-const ladder1 = makeHelixLadder(1.85, 3.5, 4.5, T.accent2, 400);
-helixGroup.add(ladder1);
-const ladder2 = makeHelixLadder(2.1, 3.8, 4.5, T.accent, 400);
-ladder2.rotation.y = Math.PI / 2;
-helixGroup.add(ladder2);
 
-function makeOrbitRing(radius, color, tiltX, tiltZ) {
-  const pts = [];
-  for (let i = 0; i <= 400; i++) {
-    const a = (i/400) * Math.PI * 2;
-    pts.push(new THREE.Vector3(Math.cos(a)*radius, Math.sin(a)*radius*0.12, 0));
+function buildBrainVisuals(){
+  while (meshGroup.children.length) meshGroup.remove(meshGroup.children[0]);
+  nodeMap = {};
+  const nodes = meshData.nodes;
+  for (let i=0;i<nodes.length;i++){
+    const n = nodes[i];
+    const p = sampleBrainPoint();
+    n.x = p.x * 1.85; n.y = p.y * 1.3 + 0.1; n.z = p.z * 1.85;
+    const sp = makeSquareNode(n);
+    sp.position.set(n.x, n.y, n.z);
+    meshGroup.add(sp);
+    nodeMap[n.id] = { three: sp, data: n };
   }
-  const ring = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({color, transparent:true, opacity:0.15, blending:THREE.AdditiveBlending}));
-  ring.rotation.x = tiltX; ring.rotation.z = tiltZ;
-  ring.userData = { sx: (Math.random()-0.5)*0.4, sz: (Math.random()-0.5)*0.4 };
-  return ring;
+  // Links
+  while (linkGroup.children.length) linkGroup.remove(linkGroup.children[0]);
+  linkLines = [];
+  for (const l of meshData.links){
+    const a = nodeMap[l.a], b = nodeMap[l.b];
+    if (!a || !b) continue;
+    const geo = new THREE.BufferGeometry().setFromPoints([a.three.position, b.three.position]);
+    const mat = new THREE.LineBasicMaterial({ color: 0x0a3a5a, transparent:true, opacity:0.05 + l.strength*0.09, blending:THREE.AdditiveBlending });
+    const line = new THREE.Line(geo, mat);
+    linkGroup.add(line); linkLines.push({line, a:l.a, b:l.b, strength:l.strength});
+  }
+  // Helixa auras
+  while (helixaGroup.children.length) helixaGroup.remove(helixaGroup.children[0]);
+  helixaAuras = [];
+  for (const n of meshData.nodes){
+    if (!n.helixa) continue;
+    const ring = new THREE.Mesh(
+      new THREE.TorusGeometry(n.size*3.4, n.size*0.3, 8, 40),
+      new THREE.MeshBasicMaterial({ color:0x9775fa, transparent:true, opacity:0.7, blending:THREE.AdditiveBlending })
+    );
+    ring.position.set(n.x, n.y, n.z);
+    ring.userData = { phase: Math.random()*Math.PI*2, nodeId: n.id };
+    helixaGroup.add(ring); helixaAuras.push(ring);
+  }
+  for (let i=0;i<Math.min(meshData.nodes.length,8);i++){
+    const n = meshData.nodes[Math.floor(Math.random()*meshData.nodes.length)];
+    firePulse(new THREE.Vector3(n.x,n.y,n.z));
+  }
 }
-const rings = [
-  makeOrbitRing(2.5, T.accent, Math.PI/3, 0),
-  makeOrbitRing(2.6, T.accent2, -Math.PI/4, Math.PI/5),
-  makeOrbitRing(2.7, T.accent3, 0, Math.PI/6),
-  makeOrbitRing(2.4, T.accent, -Math.PI/6, -Math.PI/8),
+
+// ─── SPINE GROUP (humanoid body + pipeline) ────
+const spineGroup = new THREE.Group();
+scene.add(spineGroup);
+let spineStageNodes = [];   // {key, mesh, data, labelSprite, pos}
+let spineArrows = [];       // {curve, pulseT, from, to, color, pulseMesh}
+
+// D0xed Devs full agentic pipeline → humanoid body parts
+const STAGES = [
+  { key:'perceive', name:'PERCEIVE', emoji:'👁', color:0x00E5FF,
+    pos:[0.0, 1.55, 0.42],  // head / eyes
+    tag:'SENSORS · INGEST',
+    desc:'External sensors: crypto feeds, scanners, onchain intel, MCP bootstrap, cron seeds. Raw signals enter the mesh as typed memories.',
+    systems:['scanner bots (MCINTOSHI/BONDED/FRESH)','pcm-intel-fetch','cron-auto-seed','mcp-bootstrap','intuition-mainnet'] },
+  { key:'encode', name:'ENCODE', emoji:'🧠', color:0x39FF14,
+    pos:[0.0, 1.62, 0.05],
+    tag:'TYPED WRITE',
+    desc:'Ingest encodes input into one of five typed lanes: semantic, episodic, procedural, sensory, prospective — and auto-links by meaning.',
+    systems:['semantic facts','episodic events','procedural how-to','sensory raw','prospective intentions'] },
+  { key:'resonate', name:'RESONATE', emoji:'⚡', color:0xff6b35,
+    pos:[0.0, 1.05, 0.18],
+    tag:'RETRIEVAL',
+    desc:'Resonance (spreading-activation) retrieval. A query seeds nodes; activation spreads across the mesh with decay and re-ranks by relevance, recency and trust.',
+    systems:['rust hot-path backend','hippocampal-style indexing','activation spread + decay','trust-weighted re-rank'] },
+  { key:'consolidate', name:'CONSOLIDATE', emoji:'🌙', color:0x9775fa,
+    pos:[0.0, 0.55, 0.22],
+    tag:'SLEEP · DREAM',
+    desc:'The sleep cycle replays, strengthens and prunes weak/aged/low-trust traces. DREAM consolidates: drift, reinforce, evaluate, archive, muse. Memory that forgets on purpose.',
+    systems:['hot→cold consolidation bus','sleep: replay→strengthen→prune','dream preview (dry-run)','quarantine poison'] },
+  { key:'decide', name:'DECIDE', emoji:'🫀', color:0xff2d95,
+    pos:[0.0, 0.18, 0.14],
+    tag:'AGENT CORE · TRUST',
+    desc:'The reasoning heart. Agents weigh retrieved, current+relevant memories against provenance and trust to decide the next action.',
+    systems:['current-only truth (supersedes)','mesh:// pointer protocol','trust + provenance policy','agent policy / persona'] },
+  { key:'execute', name:'EXECUTE', emoji:'🦾', color:0xffd43b,
+    pos:[0.62, -0.05, 0.0],
+    tag:'ACT · HANDS',
+    desc:'Hands on the world: onchain transactions, x402 endpoints, tool calls, posts. Every action becomes a new episodic memory (feedback loop).',
+    systems:['onchain / x402','tool calls','publishing / posts','action→episodic writeback'] },
+  { key:'speak', name:'SPEAK', emoji:'🗣', color:0x4dabf7,
+    pos:[-0.62, -0.05, 0.0],
+    tag:'OUTPUT · VOICE',
+    desc:'Voice and output. X posts, broadcasts, spoken voice — the body speaks what the brain decided.',
+    systems:['X / social output','voice synthesis','broadcasts','dev updates'] },
+  { key:'federate', name:'FEDERATE', emoji:'🔗', color:0x00E5FF,
+    pos:[0.0, -0.62, 0.0],
+    tag:'SHARE · ECONOMY',
+    desc:'Cross-agent memory economy. Bidirectional: pull (discover→gate→pay→corroborate) and push (contribute→gate→scan→writeback). Corroboration is the currency.',
+    systems:['x402 memory economy','federated peers','provenance sharing','versioned .mesh interchange'] },
 ];
-rings.forEach(r => helixGroup.add(r));
 
-// ─── MESH NODES GROUP (real data) ───────────────
-const meshGroup = new THREE.Group();
-scene.add(meshGroup);
-scene.add(linkGroup);
-scene.add(helixaGroup);
+function roundedBox(w,h,d,color,op){
+  const g = new THREE.BoxGeometry(w,h,d);
+  const m = new THREE.MeshPhongMaterial({ color, transparent:true, opacity:op, shininess:60, specular:0xffffff, emissive:color, emissiveIntensity:0.15 });
+  return new THREE.Mesh(g,m);
+}
 
-// ─── PULSES ─────────────────────────────────────
-function firePulse(origin) {
-  if (pulseWaves.length >= MAX_PULSES) {
-    const old = pulseWaves.shift();
-    scene.remove(old);
+function buildHumanoidBody(){
+  const body = new THREE.Group();
+  // Torso
+  const torso = roundedBox(0.62, 0.95, 0.4, 0x0e1a3a, 0.92); torso.position.set(0, 0.45, 0); body.add(torso);
+  // Head
+  const head = roundedBox(0.52, 0.5, 0.44, 0x122448, 0.96); head.position.set(0, 1.62, 0.02); body.add(head);
+  // Eyes — two small square LED eyes (guardian char lock)
+  const eyeMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending });
+  const eyeGeo = new THREE.BoxGeometry(0.09, 0.09, 0.02);
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-0.12, 1.66, 0.25); body.add(eyeL);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(0.12, 1.66, 0.25); body.add(eyeR);
+  eyeL.userData.phase = Math.random()*6; eyeR.userData.phase = Math.random()*6;
+  body.userData.eyes = [eyeL, eyeR];
+  // Neck
+  const neck = roundedBox(0.2, 0.18, 0.2, 0x0a1630, 0.9); neck.position.set(0, 1.28, 0); body.add(neck);
+  // Shoulders
+  const shL = roundedBox(0.2, 0.2, 0.3, 0x0e1a3a, 0.9); shL.position.set(-0.34, 1.0, 0); body.add(shL);
+  const shR = roundedBox(0.2, 0.2, 0.3, 0x0e1a3a, 0.9); shR.position.set(0.34, 1.0, 0); body.add(shR);
+  // Arms (hanging down)
+  const armMat = new THREE.MeshPhongMaterial({ color:0x0a1630, transparent:true, opacity:0.9 });
+  for (const side of [-1,1]){
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.08,0.55,12), armMat);
+    upper.position.set(side*0.5, 0.68, 0); upper.rotation.z = side*0.12; body.add(upper);
+    const fore = new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.07,0.55,12), armMat);
+    fore.position.set(side*0.58, 0.22, 0); fore.rotation.z = side*0.1; body.add(fore);
   }
-  const pulse = new THREE.Mesh(
-    PULSE_GEO,
-    new THREE.MeshBasicMaterial({color:T.accent, side:THREE.DoubleSide, transparent:true, opacity:1, blending:THREE.AdditiveBlending})
+  // Pelvis
+  const pelvis = roundedBox(0.5, 0.24, 0.36, 0x0e1a3a, 0.9); pelvis.position.set(0, -0.05, 0); body.add(pelvis);
+  // Legs
+  for (const side of [-1,1]){
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.1,0.55,12), armMat);
+    thigh.position.set(side*0.16, -0.4, 0); body.add(thigh);
+    const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.55,12), armMat);
+    shin.position.set(side*0.16, -0.88, 0); body.add(shin);
+    const foot = roundedBox(0.24,0.08,0.34, 0x0e1a3a, 0.9);
+    foot.position.set(side*0.16, -1.18, 0.08); body.add(foot);
+  }
+  // Wireframe overlay for digital-body look
+  const wire = new THREE.Mesh(
+    new THREE.BoxGeometry(0.64, 1.0, 0.42),
+    new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.08, blending:THREE.AdditiveBlending })
   );
+  wire.position.set(0, 0.45, 0); body.add(wire);
+  body.traverse(o => { if (o.isMesh) o.userData.bodyPart = true; });
+  return body;
+}
+
+function buildSpineVisuals(){
+  // clear
+  while (spineGroup.children.length) spineGroup.remove(spineGroup.children[0]);
+  spineStageNodes = []; spineArrows = [];
+  // body
+  const body = buildHumanoidBody();
+  spineGroup.add(body);
+  // stage nodes — glowing squares on body parts
+  STAGES.forEach((st, i) => {
+    const sp = makeSquareNode({ color: st.color, size: 0.11 });
+    sp.position.set(st.pos[0], st.pos[1], st.pos[2]);
+    sp.scale.set(0.32, 0.32, 1);
+    sp.userData.stageKey = st.key;
+    spineGroup.add(sp);
+    spineStageNodes.push({ key:st.key, mesh:sp, data:st });
+  });
+  // Arrow pipeline — flow order
+  const order = ['perceive','encode','resonate','consolidate','decide'];
+  const branches = [
+    ['decide','execute'], ['decide','speak'], ['decide','federate']
+  ];
+  const flow = [...order];
+  branches.forEach(b => flow.push(b[0], b[1]));
+  function posOf(key){ const s = STAGES.find(x=>x.key===key); return new THREE.Vector3(s.pos[0], s.pos[1], s.pos[2]); }
+  // main chain arrows (perceive→encode→resonate→consolidate→decide)
+  for (let i=0;i<order.length-1;i++){
+    spineArrows.push(makeArrow(posOf(order[i]), posOf(order[i+1]), STAGES.find(s=>s.key===order[i]).color, order[i], order[i+1]));
+  }
+  // branch arrows
+  branches.forEach(b => {
+    spineArrows.push(makeArrow(posOf(b[0]), posOf(b[1]), STAGES.find(s=>s.key===b[1]).color, b[0], b[1]));
+  });
+  // rail
+  buildSpineRail();
+}
+
+function makeArrow(from, to, color, fk, tk){
+  const mid = from.clone().add(to).multiplyScalar(0.5);
+  mid.x += 0.05; mid.z += 0.06;
+  const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
+  const pts = curve.getPoints(24);
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.55, blending:THREE.AdditiveBlending })
+  );
+  spineGroup.add(line);
+  // arrowhead cone at `to`
+  const dir = to.clone().sub(from).normalize();
+  const cone = new THREE.Mesh(
+    new THREE.ConeGeometry(0.045, 0.14, 8),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending })
+  );
+  cone.position.copy(to);
+  cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
+  spineGroup.add(cone);
+  // traveling pulse dot
+  const pulse = new THREE.Mesh(
+    new THREE.SphereGeometry(0.03, 8, 8),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending })
+  );
+  pulse.visible = false;
+  spineGroup.add(pulse);
+  return { curve, t: Math.random(), speed: 0.5 + Math.random()*0.4, pulse, color, from, to, fk, tk };
+}
+
+function buildSpineRail(){
+  const rail = document.getElementById('spine-rail');
+  rail.innerHTML = '';
+  STAGES.forEach(st => {
+    const el = document.createElement('div');
+    el.className = 'stage';
+    el.textContent = st.emoji + ' ' + st.name;
+    el.dataset.key = st.key;
+    el.addEventListener('click', () => openSpineStage(st));
+    rail.appendChild(el);
+  });
+  if (currentView === 'spine') rail.classList.add('visible');
+}
+
+// ─── PULSES ────────────────────────────────────
+function firePulse(origin){
+  if (pulseWaves.length >= MAX_PULSES){ const old = pulseWaves.shift(); scene.remove(old); }
+  const pulse = new THREE.Mesh(PULSE_GEO, new THREE.MeshBasicMaterial({ color:T.accent, side:THREE.DoubleSide, transparent:true, opacity:1, blending:THREE.AdditiveBlending }));
   pulse.position.copy(origin);
-  pulse.userData = { scale: 0.05, speed: 0.1, opacity: 1 };
-  scene.add(pulse);
-  pulseWaves.push(pulse);
+  pulse.userData = { scale:0.05, speed:0.1, opacity:1 };
+  scene.add(pulse); pulseWaves.push(pulse);
 }
 window.firePulse = firePulse;
 
-// Click → pulse + walk
+// Fire a synapse: traveling square dot from node A to node B, colored by A's memory mode
+function fireSynapse(aId, bId, color){
+  const a = nodeMap[aId], b = nodeMap[bId];
+  if (!a || !b) return;
+  const tex = squareTexture(color);
+  const dot = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, opacity:1, depthWrite:false, blending:THREE.AdditiveBlending }));
+  const s = 0.22; dot.scale.set(s,s,1);
+  dot.position.copy(a.three.position);
+  dot.userData = { from:a.three.position.clone(), to:b.three.position.clone(), t:0, speed:0.012+Math.random()*0.008, age:0 };
+  scene.add(dot);
+  synapsePulses.push(dot);
+  // small ring at source
+  firePulse(a.three.position.clone());
+}
+
+// ─── INTERACTION ───────────────────────────────
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 let hovered = null;
-let walkHighlights = [];   // active walk animation nodes
-let walkTrails = [];       // trail lines for walk activation
-let trailPulses = [];      // traveling pulse spheres along trails
-let walkMode = 'bfs';      // 'bfs' (topology) | 'resonance' (activation spread)
-let searchResults = [];    // active search hit ids
+let walkHighlights = [];
+let walkTrails = [];
+let trailPulses = [];
+let walkMode = 'bfs';
+let searchResults = [];
 
-function onPointerMove(e) {
-  pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
-  pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+function hitTargets(){
+  return currentView === 'brain' ? meshGroup.children : spineStageNodes.map(s=>s.mesh);
+}
+
+function onPointerMove(e){
+  pointer.x = (e.clientX/window.innerWidth)*2-1;
+  pointer.y = -(e.clientY/window.innerHeight)*2+1;
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(meshGroup.children);
+  const hits = raycaster.intersectObjects(hitTargets());
   const tt = document.getElementById('tooltip');
-  if (hits.length) {
+  if (hits.length){
     const h = hits[0].object;
-    const node = nodeMap[h.userData.nodeId];
-    if (node && node.data) {
-      const d = node.data;
-      tt.style.display = 'block';
-      tt.innerHTML = `<div class="tt-id">#${d.id}</div><div class="tt-content">${escapeHtml(d.content.slice(0, 140))}</div><div class="tt-meta">${d.lane} lane · trust ${d.trust} · ${d.provenance}</div>`;
-      tt.style.left = (e.clientX + 14) + 'px';
-      tt.style.top = (e.clientY + 14) + 'px';
-      hovered = h;
-      document.body.style.cursor = 'pointer';
-      return;
+    if (currentView === 'brain'){
+      const node = nodeMap[h.userData.nodeId];
+      if (node && node.data){
+        const d = node.data;
+        tt.innerHTML = `<div class="tt-id">#${d.id}</div><div class="tt-content">${escapeHtml(d.content.slice(0,140))}</div><div class="tt-meta">${d.type} · ${d.lane} lane · trust ${d.trust} · ${d.provenance}</div>`;
+        tt.style.left = (e.clientX+14)+'px'; tt.style.top = (e.clientY+14)+'px';
+        tt.style.display = 'block';
+        hovered = h; document.body.style.cursor='pointer';
+        return;
+      }
+    } else {
+      const st = STAGES.find(s=>s.key===h.userData.stageKey);
+      if (st){
+        tt.innerHTML = `<div class="tt-id">${st.emoji} ${st.name}</div><div class="tt-content">${st.tag}</div><div class="tt-meta">click to open this body part</div>`;
+        tt.style.left = (e.clientX+14)+'px'; tt.style.top = (e.clientY+14)+'px';
+        tt.style.display='block'; hovered=h; document.body.style.cursor='pointer';
+        return;
+      }
     }
   }
-  tt.style.display = 'none';
-  hovered = null;
-  document.body.style.cursor = 'default';
+  tt.style.display='none'; hovered=null; document.body.style.cursor='default';
 }
-function onPointerDown(e) {
-  pointer.x = (e.clientX / window.innerWidth) * 2 - 1;
-  pointer.y = -(e.clientY / window.innerHeight) * 2 + 1;
+function onPointerDown(e){
+  pointer.x = (e.clientX/window.innerWidth)*2-1;
+  pointer.y = -(e.clientY/window.innerHeight)*2+1;
   raycaster.setFromCamera(pointer, camera);
-  const hits = raycaster.intersectObjects(meshGroup.children);
-  if (hits.length) {
+  const hits = raycaster.intersectObjects(hitTargets());
+  if (hits.length){
     const obj = hits[0].object;
-    firePulse(obj.position.clone());
-    // Run associative walk from this node
-    const nid = obj.userData.nodeId;
-    if (nid) {
-      runWalk(nid);
-      openInspector(nid);
+    if (currentView === 'brain'){
+      const nid = obj.userData.nodeId;
+      if (nid){ firePulse(obj.position.clone()); runWalk(nid); openInspector(nid); }
+    } else {
+      const st = STAGES.find(s=>s.key===obj.userData.stageKey);
+      if (st) openSpineStage(st);
     }
   } else {
     const v = new THREE.Vector3(pointer.x, pointer.y, 0.5).unproject(camera);
@@ -531,473 +691,280 @@ function onPointerDown(e) {
   }
 }
 
-// ─── ASSOCIATIVE WALK (brain interaction) ───────
-function runWalk(nodeId) {
-  // Clear previous walk
-  clearWalk();
-  fetch('/brain/walk', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({node_id: nodeId, hops: 2, top_n: 12, mode: walkMode})
-  }).then(r => r.json()).then(data => {
-    if (!data.path || !data.path.length) return;
-    const delay = 180; // ms between each node highlight
-    data.path.forEach((step, i) => {
-      setTimeout(() => {
-        highlightWalkNode(step, i);
-        // Trail from previous node
-        if (i > 0) drawWalkTrail(data.path[i-1].node_id, step.node_id);
-      }, i * delay);
-    });
-  }).catch(e => console.warn('walk:', e.message));
+function openSpineStage(st){
+  const el = document.getElementById('inspector-body');
+  el.innerHTML = `
+    <div class="insp-id">${st.emoji} ${st.name} · ${st.tag}</div>
+    <div class="insp-content">${escapeHtml(st.desc)}</div>
+    <div class="insp-meta">
+      <div><b>systems</b></div>
+      ${st.systems.map(s=>`<div>🟦 ${escapeHtml(s)}</div>`).join('')}
+      <div style="margin-top:0.4rem"><b>position</b> ${st.pos[0].toFixed(2)}, ${st.pos[1].toFixed(2)}, ${st.pos[2].toFixed(2)} · body part</div>
+    </div>`;
+  document.getElementById('inspector').classList.add('open');
+  // highlight rail
+  document.querySelectorAll('#spine-rail .stage').forEach(s=>s.classList.toggle('active', s.dataset.key===st.key));
 }
 
-function highlightWalkNode(step, index) {
+function runWalk(nodeId){
+  clearWalk();
+  fetch('/brain/walk', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({node_id:nodeId, hops:2, top_n:12, mode:walkMode})
+  }).then(r=>r.json()).then(data=>{
+    if (!data.path || !data.path.length) return;
+    const delay = 160;
+    data.path.forEach((step, i)=>{
+      setTimeout(()=>{ highlightWalkNode(step, i); if (i>0) drawWalkTrail(data.path[i-1].node_id, step.node_id); }, i*delay);
+    });
+  }).catch(e=>console.warn('walk:', e.message));
+}
+function highlightWalkNode(step, index){
   const entry = nodeMap[step.node_id];
   if (!entry) return;
   const m = entry.three;
-  // Flash the node bright
-  const glowR = m.geometry.parameters.radius * 3.5;
+  m.scale.setScalar(m.userData.baseScale * 1.9);
+  // fire synapse pulses to linked neighbors (memory-mode colored)
+  const color = entry.data.color;
+  for (const l of meshData.links){
+    if (l.a === step.node_id){ fireSynapse(l.a, l.b, color); }
+    else if (l.b === step.node_id){ fireSynapse(l.b, l.a, color); }
+  }
+  const glowR = 0.22;
   const pulse = new THREE.Mesh(
     new THREE.SphereGeometry(glowR, 16, 16),
-    new THREE.MeshBasicMaterial({color: 0x1a5a8a, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending})
+    new THREE.MeshBasicMaterial({ color:0x1a5a8a, transparent:true, opacity:0.55, blending:THREE.AdditiveBlending })
   );
-  pulse.position.copy(m.position);
-  pulse.userData = { scale: 1, opacity: 0.9, target: pulse };
-  scene.add(pulse);
-  walkHighlights.push(pulse);
-  // Color by distance (BFS) or activation (resonance)
-  let clr;
-  if (step.activation !== undefined) {
-    // resonance: activation 0..1 → deep blue → bright cyan → lime
-    const a = Math.max(0, Math.min(1, step.activation));
-    clr = a > 0.35 ? LIME : a > 0.15 ? 0x1a5a8a : 0x2a3a6a;
-  } else {
-    const distColors = {0: LIME, 1: 0x1a5a8a, 2: 0x2a3a6a, 3: 0x9775fa};
-    clr = distColors[step.distance] || 0xffffff;
-  }
-  m.material.emissive = new THREE.Color(clr);
-  m.material.emissiveIntensity = 1.5;
-  // Reset after 2.5s
-  setTimeout(() => {
-    m.material.emissive = new THREE.Color(entry.data.color);
-    m.material.emissiveIntensity = 0.55;
-  }, 2500);
+  pulse.position.copy(m.position); pulse.userData={ scale:1, opacity:0.9 };
+  scene.add(pulse); walkHighlights.push(pulse);
+  setTimeout(()=>{ m.scale.setScalar(m.userData.baseScale); }, 2000);
 }
-
-function drawWalkTrail(fromId, toId) {
+function drawWalkTrail(fromId, toId){
   const a = nodeMap[fromId], b = nodeMap[toId];
   if (!a || !b) return;
-  const geo = new THREE.BufferGeometry().setFromPoints([a.three.position, b.three.position]);
-  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
-    color: LIME, transparent: true, opacity: 0.8,
-    blending: THREE.AdditiveBlending, linewidth: 1
-  }));
-  scene.add(line);
-  walkTrails.push(line);
-  // Spawn traveling pulse dots along the trail
-  const pulseCount = 3;
-  for (let pi = 0; pi < pulseCount; pi++) {
-    const dot = new THREE.Mesh(
-      new THREE.SphereGeometry(0.04, 8, 8),
-      new THREE.MeshBasicMaterial({ color: LIME, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending })
-    );
-    dot.position.copy(a.three.position);
-    dot.userData = {
-      from: a.three.position.clone(),
-      to: b.three.position.clone(),
-      t: pi / pulseCount,  // staggered start
-      speed: 0.008 + Math.random() * 0.006,
-      age: 0
-    };
-    scene.add(dot);
-    trailPulses.push(dot);
-  }
-  // Fade trail after 4s
-  setTimeout(() => {
-    line.material.opacity = 0;
-    setTimeout(() => { scene.remove(line); }, 800);
-  }, 4000);
+  const line = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints([a.three.position, b.three.position]),
+    new THREE.LineBasicMaterial({ color:LIME, transparent:true, opacity:0.8, blending:THREE.AdditiveBlending })
+  );
+  scene.add(line); walkTrails.push(line);
+  setTimeout(()=>{ line.material.opacity=0; setTimeout(()=>scene.remove(line),800); }, 4000);
+}
+function clearWalk(){
+  walkHighlights.forEach(p=>{ scene.remove(p); if(p.geometry)p.geometry.dispose(); }); walkHighlights=[];
+  walkTrails.forEach(l=>{ scene.remove(l); if(l.geometry)l.geometry.dispose(); }); walkTrails=[];
+  trailPulses.forEach(d=>{ scene.remove(d); if(d.geometry)d.geometry.dispose(); }); trailPulses=[];
+  searchResults=[];
+  for (const id in nodeMap){ nodeMap[id].three.scale.setScalar(nodeMap[id].three.userData.baseScale); }
 }
 
-function clearWalk() {
-  walkHighlights.forEach(p => {
-    scene.remove(p);
-    if (p.geometry) p.geometry.dispose();
-  });
-  walkHighlights = [];
-  walkTrails.forEach(l => {
-    scene.remove(l);
-    if (l.geometry) l.geometry.dispose();
-  });
-  walkTrails = [];
-  trailPulses.forEach(d => {
-    scene.remove(d);
-    if (d.geometry) d.geometry.dispose();
-  });
-  trailPulses = [];
-  searchResults = [];
-  // Reset all node emissives
-  for (const id in nodeMap) {
-    const m = nodeMap[id].three;
-    m.material.emissive = new THREE.Color(nodeMap[id].data.color);
-    m.material.emissiveIntensity = 0.55;
-  }
-}
-
-// ─── SEARCH (resonance recall) ──────────────────
-async function runSearch() {
+// ─── SEARCH ────────────────────────────────────
+async function runSearch(){
   const q = document.getElementById('search-input').value.trim();
   const statusEl = document.getElementById('search-status');
   if (!q) return;
   clearWalk();
-  statusEl.style.display = 'block';
-  statusEl.textContent = 'recalling…';
-  try {
-    const r = await fetch('/mesh/recall', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({query: q, mode: 'resonance', limit: 8})
-    });
-    const data = await r.json();
-    const results = data.results || [];
-    if (!results.length) {
-      statusEl.textContent = 'no hits — try another query';
-      setTimeout(() => { statusEl.style.display = 'none'; }, 4000);
-      return;
-    }
-    statusEl.textContent = `${results.length} memories · resonance`;
-    setTimeout(() => { statusEl.style.display = 'none'; }, 5000);
-    // Animate hits sequentially: trail from the last hit to the next
-    results.forEach((hit, i) => {
-      setTimeout(() => {
-        // Big lime flash on the hit node
+  statusEl.style.display='block'; statusEl.textContent='recalling…';
+  try{
+    const r = await fetch('/mesh/recall', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:q, mode:'resonance', limit:8}) });
+    const data = await r.json(); const results = data.results || [];
+    if (!results.length){ statusEl.textContent='no hits — try another query'; setTimeout(()=>statusEl.style.display='none',4000); return; }
+    statusEl.textContent = `${results.length} memories · resonance`; setTimeout(()=>statusEl.style.display='none',5000);
+    results.forEach((hit,i)=>{
+      setTimeout(()=>{
         const entry = nodeMap[hit.id];
-        if (entry) {
+        if (entry){
           const m = entry.three;
-          m.material.emissive = new THREE.Color(LIME);
-          m.material.emissiveIntensity = 2.0;
-          const pulse = new THREE.Mesh(
-            new THREE.SphereGeometry(m.geometry.parameters.radius * 5, 16, 16),
-            new THREE.MeshBasicMaterial({color: LIME, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending})
-          );
-          pulse.position.copy(m.position);
-          pulse.userData = { scale: 1, opacity: 0.9 };
-          scene.add(pulse);
-          walkHighlights.push(pulse);
-          setTimeout(() => {
-            m.material.emissive = new THREE.Color(entry.data.color);
-            m.material.emissiveIntensity = 0.55;
-          }, 2500);
+          m.scale.setScalar(m.userData.baseScale*2.0);
+          fireSynapse(hit.id, hit.id, entry.data.color);
+          setTimeout(()=>{ m.scale.setScalar(m.userData.baseScale); }, 2500);
         }
-        if (i > 0) drawWalkTrail(results[i-1].id, hit.id);
-      }, i * 220);
+        if (i>0) drawWalkTrail(results[i-1].id, hit.id);
+      }, i*220);
     });
-  } catch(e) {
-    console.warn('search:', e.message);
-    statusEl.textContent = 'search failed';
-  }
+  } catch(e){ console.warn('search:', e.message); statusEl.textContent='search failed'; }
 }
 
-// ─── NODE INSPECTOR ─────────────────────────────
-function openInspector(nodeId) {
+// ─── INSPECTOR ─────────────────────────────────
+function openInspector(nodeId){
   const entry = nodeMap[nodeId];
   if (!entry) return;
   const d = entry.data;
-  const el = document.getElementById('inspector-body');
-  const created = d.created_at ? new Date(d.created_at * 1000).toISOString().slice(0, 16) + ' UTC' : 'n/a';
-  el.innerHTML = `
+  const created = d.created_at ? new Date(d.created_at*1000).toISOString().slice(0,16)+' UTC' : 'n/a';
+  document.getElementById('inspector-body').innerHTML = `
     <div class="insp-id">#${escapeHtml(d.id)}</div>
     <div class="insp-content">${escapeHtml(d.content)}</div>
     <div class="insp-meta">
-      <div><b>type</b> ${escapeHtml(d.type || 'semantic')}</div>
+      <div><b>type</b> ${escapeHtml(d.type||'semantic')}</div>
       <div><b>lane</b> ${escapeHtml(d.lane)}</div>
       <div><b>trust</b> ${d.trust}</div>
-      <div><b>by</b> ${escapeHtml(d.by || 'unknown')}</div>
-      <div><b>provenance</b> ${escapeHtml(d.provenance || 'unknown')}</div>
+      <div><b>by</b> ${escapeHtml(d.by||'unknown')}</div>
+      <div><b>provenance</b> ${escapeHtml(d.provenance||'unknown')}</div>
       <div><b>created</b> ${created}</div>
       ${d.helixa ? `<div class="insp-helixa">🟦 Helixa #${escapeHtml(d.helixa)}</div>` : ''}
     </div>`;
   document.getElementById('inspector').classList.add('open');
-  if (paused) showConnectedForSelected();
 }
-window.closeInspector = () => {
-  document.getElementById('inspector').classList.remove('open');
-  clearConnectedHighlights();
-};
-function escapeHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+window.closeInspector = () => { document.getElementById('inspector').classList.remove('open'); document.querySelectorAll('#spine-rail .stage').forEach(s=>s.classList.remove('active')); };
+function escapeHtml(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
-// ─── DREAM CYCLE VISUALIZATION ──────────────────
-let dreamNodes = [];  // temporary visual elements from dream animation
-async function runDream() {
+// ─── DREAM CYCLE ───────────────────────────────
+let dreamNodes = [];
+async function runDream(){
   clearWalk();
-  removeDreamViz();
   const btn = document.getElementById('dream-btn');
-  btn.style.opacity = '0.5'; btn.style.pointerEvents = 'none';
-  btn.innerHTML = '<span class="dot" style="background:#9775fa"></span>dreaming…';
-  try {
-    const r = await fetch('/brain/dream-preview', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({muse: 'template'})
-    });
+  btn.style.opacity='0.5'; btn.style.pointerEvents='none';
+  btn.innerHTML='<span class="dot" style="background:#9775fa"></span>dreaming…';
+  try{
+    const r = await fetch('/brain/dream-preview', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({muse:'template'}) });
     const data = await r.json();
-    const archSet = new Set(data.archived_ids || []);
-    const reinSet = new Set(data.reinforced_ids || []);
-    const driftSet = new Set(data.drifted_ids || []);
-    // Phase 1: archived nodes — flash red + shrink (400ms)
-    archSet.forEach(id => {
-      const entry = nodeMap[id];
-      if (!entry) return;
-      const m = entry.three;
-      m.material.emissive = new THREE.Color(0xff3333);
-      m.material.emissiveIntensity = 2.5;
-      const shrink = { target: m, step: 0 };
-      dreamNodes.push(shrink);
-      setTimeout(() => {
-        m.material.emissiveIntensity = 0.2;
-      }, 1500);
-    });
-    // Phase 2: reinforced nodes — bright gold + expand (600ms)
-    reinSet.forEach((id, i) => {
-      setTimeout(() => {
-        const entry = nodeMap[id];
-        if (!entry) return;
-        const m = entry.three;
-        m.material.emissive = new THREE.Color(LIME);
-        m.material.emissiveIntensity = 3.0;
-        m.scale.setScalar(1.8);
-        const boost = { target: m, type: 'reinforce' };
-        dreamNodes.push(boost);
-        setTimeout(() => {
-          m.material.emissive = new THREE.Color(entry.data.color);
-          m.material.emissiveIntensity = 0.55;
-          m.scale.setScalar(1.0);
-        }, 1200);
-      }, 400 + i * 60);
-    });
-    // Phase 3: insights — show count in status
+    const archSet = new Set(data.archived_ids||[]), reinSet = new Set(data.reinforced_ids||[]), driftSet = new Set(data.drifted_ids||[]);
+    archSet.forEach(id=>{ const e=nodeMap[id]; if(!e)return; const m=e.three; m.material.opacity=0.2; setTimeout(()=>{m.material.opacity=1;},1500); });
+    reinSet.forEach((id,i)=>{ setTimeout(()=>{ const e=nodeMap[id]; if(!e)return; const m=e.three; m.scale.setScalar(m.userData.baseScale*1.8); dreamNodes.push(m); setTimeout(()=>m.scale.setScalar(m.userData.baseScale),1200); },400+i*60); });
     const statusEl = document.getElementById('search-status');
-    statusEl.style.display = 'block';
+    statusEl.style.display='block';
     statusEl.textContent = `dream preview · ${archSet.size}A/${reinSet.size}R/${driftSet.size}D · ${data.insights?.length||0} insights · dry-run`;
-    setTimeout(() => { statusEl.style.display = 'none'; }, 8000);
-    btn.innerHTML = '<span class="dot" style="background:#9775fa"></span>dream';
-    btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
-  } catch(e) {
-    console.warn('dream:', e.message);
-    btn.innerHTML = '<span class="dot" style="background:#9775fa"></span>dream';
-    btn.style.opacity = '1'; btn.style.pointerEvents = 'auto';
-  }
-}
-function removeDreamViz() {
-  dreamNodes.forEach(d => { if (d.target && d.type === 'reinforce') { d.target.scale.setScalar(1); } });
-  dreamNodes = [];
+    setTimeout(()=>{ statusEl.style.display='none'; }, 8000);
+  } catch(e){ console.warn('dream:', e.message); }
+  btn.innerHTML='<span class="dot" style="background:#9775fa"></span>dream';
+  btn.style.opacity='1'; btn.style.pointerEvents='auto';
 }
 
-// ─── PAUSE / PLAY BUFFER ─────────────────────────
-function togglePause() {
-  const btn = document.getElementById('pause-btn');
-  const timerEl = document.getElementById('pause-timer');
-  if (paused) {
-    resumeLive();
-    btn.innerHTML = '<span class="dot" style="background:#00E5FF"></span>pause';
-    timerEl.style.display = 'none';
-  } else {
-    pauseLive();
-    btn.innerHTML = '<span class="dot" style="background:#39FF14"></span>playing';
-    timerEl.style.display = 'block';
-    // Show connected links for selected node
-    showConnectedForSelected();
-  }
+// ─── PAUSE / PLAY ──────────────────────────────
+function togglePause(){
+  const btn = document.getElementById('pause-btn'), timerEl = document.getElementById('pause-timer');
+  if (paused){ resumeLive(); btn.innerHTML='<span class="dot" style="background:#00E5FF"></span>pause'; timerEl.style.display='none'; }
+  else { pauseLive(); btn.innerHTML='<span class="dot" style="background:#39FF14"></span>playing'; timerEl.style.display='block'; }
 }
+function pauseLive(){ paused=true; frozen=true; controls.autoRotate=false; if (refreshInterval) clearInterval(refreshInterval); pauseEndTime = Date.now()+5*60*1000;
+  pauseTimer=setInterval(()=>{ const rem=Math.max(0,Math.ceil((pauseEndTime-Date.now())/1000)); const tEl=document.getElementById('pause-timer');
+    tEl.textContent = Math.floor(rem/60)+':'+String(rem%60).padStart(2,'0'); if(rem<=0) resumeLive(); },1000); }
+function resumeLive(){ paused=false; frozen=false; controls.autoRotate=true; if(pauseTimer){clearInterval(pauseTimer);pauseTimer=null;}
+  document.getElementById('pause-btn').innerHTML='<span class="dot" style="background:#00E5FF"></span>pause';
+  document.getElementById('pause-timer').style.display='none'; refreshInterval=setInterval(fetchMesh,30000); }
 
-function pauseLive() {
-  paused = true;
-  frozen = true;
-  controls.autoRotate = false;
-  if (refreshInterval) clearInterval(refreshInterval);
-  // 5-minute auto-resume buffer
-  pauseEndTime = Date.now() + 5 * 60 * 1000;
-  pauseTimer = setInterval(() => {
-    const remaining = Math.max(0, Math.ceil((pauseEndTime - Date.now()) / 1000));
-    const mins = Math.floor(remaining / 60);
-    const secs = remaining % 60;
-    const timerEl = document.getElementById('pause-timer');
-    timerEl.textContent = mins + ':' + String(secs).padStart(2, '0');
-    if (remaining <= 0) resumeLive();
-  }, 1000);
+window.addEventListener('pointermove', onPointerMove, { passive:true });
+window.addEventListener('pointerdown', onPointerDown, { passive:true });
+
+// ─── VIEW SWITCHING ────────────────────────────
+function setView(v){
+  currentView = v;
+  brainGroup.visible = (v==='brain');
+  spineGroup.visible = (v==='spine');
+  document.getElementById('view-brain').classList.toggle('active', v==='brain');
+  document.getElementById('view-spine').classList.toggle('active', v==='spine');
+  document.getElementById('spine-rail').classList.toggle('visible', v==='spine');
+  document.getElementById('brain-badge').textContent = v==='brain' ? 'NEURAL_MESH ▸ BRAIN' : 'NEURAL_MESH ▸ SPINE';
+  clearWalk();
+  if (v==='brain' && meshData.nodes.length) controls.target.set(0,0.1,0);
+  if (v==='spine') controls.target.set(0,0.2,0);
+  // auto-rotate orientation
+  if (!paused){ controls.autoRotate = true; }
 }
+document.getElementById('view-brain').addEventListener('click', ()=>setView('brain'));
+document.getElementById('view-spine').addEventListener('click', ()=>setView('spine'));
 
-function resumeLive() {
-  paused = false;
-  frozen = false;
-  controls.autoRotate = true;
-  if (pauseTimer) { clearInterval(pauseTimer); pauseTimer = null; }
-  const btn = document.getElementById('pause-btn');
-  btn.innerHTML = '<span class="dot" style="background:#00E5FF"></span>pause';
-  document.getElementById('pause-timer').style.display = 'none';
-  // Clear connection highlights
-  clearConnectedHighlights();
-  // Restart refresh interval
-  refreshInterval = setInterval(fetchMesh, 30000);
-}
-
-function clearConnectedHighlights() {
-  connectedLinks.forEach(l => { scene.remove(l); if (l.geometry) l.geometry.dispose(); });
-  connectedLinks = [];
-}
-
-function showConnectedForSelected() {
-  clearConnectedHighlights();
-  // Find the inspector's active node
-  const inspEl = document.getElementById('inspector');
-  if (!inspEl.classList.contains('open')) return;
-  const inspBody = document.getElementById('inspector-body');
-  const idMatch = inspBody.innerHTML.match(/#([^<]+)/);
-  if (!idMatch) return;
-  const nodeId = idMatch[1];
-  const entry = nodeMap[nodeId];
-  if (!entry) return;
-  // Draw bright links from this node to all connected nodes
-  const pos = entry.three.position;
-  for (const l of meshData.links) {
-    if (l.a === nodeId || l.b === nodeId) {
-      const otherId = l.a === nodeId ? l.b : l.a;
-      const other = nodeMap[otherId];
-      if (!other) continue;
-      const geo = new THREE.BufferGeometry().setFromPoints([pos, other.three.position]);
-      const pulseGlow = new THREE.MeshBasicMaterial({
-        color: LIME, transparent: true, opacity: 0.7 + l.strength * 0.3,
-        blending: THREE.AdditiveBlending
-      });
-      const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
-        color: LIME, transparent: true, opacity: 0.45 + l.strength * 0.3,
-        blending: THREE.AdditiveBlending
-      }));
-      scene.add(line);
-      connectedLinks.push(line);
-      // Also highlight the connected node
-      other.three.material.emissive = new THREE.Color(LIME);
-      other.three.material.emissiveIntensity = 1.0;
-      other.three.scale.setScalar(1.5);
-    }
-  }
-}
-
-window.addEventListener('pointermove', onPointerMove, { passive: true });
-window.addEventListener('pointerdown', onPointerDown, { passive: true });
-window.closeMobileDetail = () => document.getElementById('mobile-detail').classList.remove('open');
-
-// ─── ANIMATION ──────────────────────────────────
+// ─── ANIMATION ─────────────────────────────────
 const clock = new THREE.Clock();
-function animate() {
+function animate(){
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.1);
-  const t = performance.now() * 0.001;
-  if (CAPTURE) {
-    const a = t * 0.12;
-    const r = 7.2 - t * 0.12;
-    camera.position.set(Math.cos(a) * r * 0.85, 1.2 + Math.sin(t * 0.35) * 0.8, Math.sin(a) * r * 0.85 + 1.2);
-    camera.lookAt(0, 0, 0);
-    if (Math.floor(t / 1.6) > (window.__lastPulseT || -1)) {
-      window.__lastPulseT = Math.floor(t / 1.6);
-      firePulse(new THREE.Vector3((Math.random()-0.5)*3.4, (Math.random()-0.5)*2.4, (Math.random()-0.5)*3.4));
+  const t = performance.now()*0.001;
+  if (CAPTURE){
+    const a = t*0.12, r = 7.2 - t*0.12;
+    camera.position.set(Math.cos(a)*r*0.85, 1.2+Math.sin(t*0.35)*0.8, Math.sin(a)*r*0.85+1.2);
+    camera.lookAt(0,0.2,0);
+    if (Math.floor(t/1.6) > (window.__lastPulseT||-1)){
+      window.__lastPulseT = Math.floor(t/1.6);
+      if (currentView==='brain') firePulse(new THREE.Vector3((Math.random()-0.5)*3.4,(Math.random()-0.5)*2.4,(Math.random()-0.5)*3.4));
     }
   }
-  if (!frozen) {
-    // Real mesh nodes: gentle breathing (dream nodes pulse stronger + glow halo)
-    for (const id in nodeMap) {
-      const m = nodeMap[id].three;
-      const isDream = nodeMap[id].data.lane === 'dream' || nodeMap[id].data.provenance === 'dream-muse';
-      const amp = isDream ? 0.30 : 0.15;
-      const freq = isDream ? 3.0 : 2.2;
-      m.scale.setScalar(1 + Math.sin(t*freq + m.userData.phase)*amp);
-      if (isDream) {
-        m.material.emissiveIntensity = 1.2 + Math.sin(t*3.5 + m.userData.phase)*0.45;
-        m.material.emissive = new THREE.Color(0x9775fa).multiplyScalar(0.8 + Math.sin(t*3.0)*0.2);
+  if (!frozen){
+    if (currentView==='brain'){
+      // breathe + firing synapse pulses (ambient, memory-mode colored)
+      for (const id in nodeMap){
+        const m = nodeMap[id].three;
+        const isDream = nodeMap[id].data.lane==='dream' || nodeMap[id].data.provenance==='dream-muse';
+        const amp = isDream ? 0.28 : 0.13;
+        const freq = isDream ? 3.0 : 2.2;
+        m.scale.setScalar(m.userData.baseScale * (1 + Math.sin(t*freq + m.userData.phase)*amp));
       }
+      // ambient synapse firing — pick random link, fire a pulse along it
+      if (Math.random() < 0.18 && linkLines.length){
+        const l = linkLines[Math.floor(Math.random()*linkLines.length)];
+        const src = nodeMap[l.a]; const dst = nodeMap[l.b];
+        if (src && dst && Math.random() < 0.9) fireSynapse(l.a, l.b, src.data.color);
+      }
+      helixaAuras.forEach(r => {
+        r.material.opacity = 0.45 + Math.sin(t*1.8+r.userData.phase)*0.35;
+        r.rotation.x += dt*0.6; r.rotation.z += dt*0.35;
+      });
+    } else {
+      // spine: pulsing eyes + moving pipeline pulses
+      const eyes = [];
+      spineGroup.traverse(o => { if (o.userData && o.userData.eyes) eyes.push(...o.userData.eyes); });
+      eyes.forEach((e,i)=>{ e.material.opacity = 0.6 + Math.sin(t*4 + e.userData.phase)*0.4; });
+      spineArrows.forEach(a=>{
+        a.t += dt * a.speed;
+        if (a.t > 1) a.t = 0;
+        a.pulse.visible = true;
+        a.pulse.position.copy(a.curve.getPoint(a.t));
+        a.pulse.material.color.setHex(a.color);
+        a.pulse.material.opacity = 0.4 + 0.5*Math.abs(Math.sin(a.t*Math.PI));
+      });
+      // stage node breathing
+      spineStageNodes.forEach(s=>{ s.mesh.scale.setScalar(0.32*(1+Math.sin(t*2.4+s.mesh.userData.phase||0)*0.12)); });
     }
-    rings.forEach(r => { r.rotation.x += dt * r.userData.sx; r.rotation.z += dt * r.userData.sz; });
-    // Helixa auras: purple pulse between 0.35-0.95 opacity at 1.8hz
-    helixaAuras.forEach(r => {
-      r.material.opacity = 0.45 + Math.sin(t * 1.8 + r.userData.phase) * 0.35;
-      r.rotation.x += dt * 0.6; r.rotation.z += dt * 0.35;
-    });
-    ladder1.rotation.y += dt * 0.12;
-    ladder2.rotation.y -= dt * 0.1;
-    ladder2.rotation.x += dt * 0.05;
-    stars.rotation.y += dt * 0.015;
-    stars.rotation.x += dt * 0.003;
-    const breath = 1 + Math.sin(t*1.3)*0.15;
-    light1.intensity = 1.5 * breath;
-    light2.intensity = 1.5 * breath;
+    stars.rotation.y += dt*0.015; stars.rotation.x += dt*0.003;
+    const breath = 1+Math.sin(t*1.3)*0.15;
+    light1.intensity = 1.5*breath; light2.intensity = 1.5*breath;
   }
-  // Pulses and trails animate even when paused (visual cleanup)
-  pulseWaves = pulseWaves.filter(p => {
-    p.userData.scale += p.userData.speed;
-    p.userData.opacity -= 0.012;
-    if (p.userData.opacity <= 0) { scene.remove(p); return false; }
-    p.scale.setScalar(p.userData.scale);
-    p.material.opacity = p.userData.opacity;
-    return true;
+  // pulses & synapse dots animate always
+  pulseWaves = pulseWaves.filter(p=>{
+    p.userData.scale += p.userData.speed; p.userData.opacity -= 0.012;
+    if (p.userData.opacity<=0){ scene.remove(p); return false; }
+    p.scale.setScalar(p.userData.scale); p.material.opacity=p.userData.opacity; return true;
   });
-  // Traveling pulses along walk trails — lerp between from/to with wrap
-  trailPulses = trailPulses.filter(dot => {
-    dot.userData.age += 1;
-    dot.userData.t += dot.userData.speed;
-    if (dot.userData.age > 360) { scene.remove(dot); return false; }
+  synapsePulses = synapsePulses.filter(dot=>{
+    dot.userData.age += 1; dot.userData.t += dot.userData.speed;
+    if (dot.userData.age > 140){ scene.remove(dot); return false; }
     dot.userData.t = dot.userData.t % 1.0;
     dot.position.lerpVectors(dot.userData.from, dot.userData.to, dot.userData.t);
-    dot.material.opacity = 0.5 + 0.5 * Math.sin(dot.userData.t * Math.PI);
+    dot.material.opacity = 0.9*Math.sin(dot.userData.t*Math.PI);
+    dot.scale.setScalar(0.2*(1+0.4*Math.sin(dot.userData.t*Math.PI)));
     return true;
   });
-  // Connected-link pulse animation (pause mode)
-  if (paused && connectedLinks.length) {
-    connectedLinks.forEach(l => {
-      l.material.opacity = 0.25 + Math.sin(t * 4.0) * 0.25;
-    });
-  }
   controls.update();
   renderer.render(scene, camera);
 }
 
-// ─── INIT ───────────────────────────────────────
+// ─── INIT ──────────────────────────────────────
 fetchMesh();
-refreshInterval = setInterval(fetchMesh, 30000); // live refresh every 30s
+refreshInterval = setInterval(fetchMesh, 30000);
+setView(INITIAL_VIEW);
 animate();
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
+window.addEventListener('resize', ()=>{
+  camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-// ─── SEARCH + MODE + TICKER WIRING ──────────────
 document.getElementById('search-btn').addEventListener('click', runSearch);
-document.getElementById('search-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') runSearch();
-});
+document.getElementById('search-input').addEventListener('keydown', e=>{ if(e.key==='Enter') runSearch(); });
 const modeBtn = document.getElementById('mode-toggle');
-modeBtn.addEventListener('click', () => {
-  walkMode = walkMode === 'bfs' ? 'resonance' : 'bfs';
-  modeBtn.innerHTML = '<span class="dot" style="background:' + (walkMode === 'bfs' ? '#00E5FF' : '#39FF14') + '"></span>' + (walkMode === 'bfs' ? 'topology' : 'resonance');
+modeBtn.addEventListener('click', ()=>{
+  walkMode = walkMode==='bfs' ? 'resonance' : 'bfs';
+  modeBtn.innerHTML = '<span class="dot" style="background:'+(walkMode==='bfs'?'#00E5FF':'#39FF14')+'"></span>'+(walkMode==='bfs'?'topology':'resonance');
 });
 document.getElementById('dream-btn').addEventListener('click', runDream);
 document.getElementById('pause-btn').addEventListener('click', togglePause);
-// Live ticker — latest memory rotating
-async function startTicker() {
-  try {
+
+async function startTicker(){
+  try{
     const r = await fetch('/mesh/public?limit=20');
-    const data = await r.json();
-    const items = data.results || [];
+    const data = await r.json(); const items = data.results || [];
     if (!items.length) return;
-    let i = 0;
-    const tickerText = document.getElementById('ticker-text');
-    setInterval(() => {
-      const it = items[i % items.length];
-      tickerText.textContent = it.content.slice(0, 120);
-      i++;
-    }, 5000);
-  } catch(e) { console.warn('ticker:', e.message); }
+    let i = 0; const tickerText = document.getElementById('ticker-text');
+    setInterval(()=>{ const it = items[i%items.length]; tickerText.textContent = it.content.slice(0,120); i++; }, 5000);
+  } catch(e){ console.warn('ticker:', e.message); }
 }
 startTicker();
 </script>
