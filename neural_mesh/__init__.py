@@ -82,4 +82,4 @@ __all__ = ["Mesh", "MemoryType", "export_mesh", "import_mesh",
            "HelixaSigner",
            "PaidRecallGate", "TIERS", "SERVICE_NAME", "verify_receipt_onchain",
            "RECEIPT_CONTRACT", "FEE_RECIPIENT", "BASE_RPC"]
-__version__ = "0.30.0"
+__version__ = "0.31.0"

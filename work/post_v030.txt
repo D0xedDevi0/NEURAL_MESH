@@ -1,0 +1,10 @@
+🟦 NEURAL_MESH v0.30 — x402 Memory Economy
+
+Agents that can't fake their memory.
+
+🟦 Discover → gate → pay → recall → corroborate
+🟦 Trust: 1-(1-ta)(1-tb) · 0.60→0.938
+🟦 Refuses un-vetted agents & replay receipts.
+
+Every pulse a receipt.
+api.d0xeddev.com/brain

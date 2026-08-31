@@ -33,7 +33,7 @@ AUTH_ENDPOINTS = {"add", "memory_cycle", "sleep_mesh", "consolidate_mesh",
                   "pointer_put", "pointer_summary", "dream", "export_mesh",
                   "merge", "stamp", "intuition_ingest_receipts", "eval_qa",
                   "yantrikdb_ingest", "yantrikdb_think", "helixa_attest_node",
-                  "peer_query", "mesh_audit", "federated_recall"}
+                  "peer_query", "mesh_audit", "federated_recall", "federated_dream"}
 POLICY_FIELDS = {"trust", "cap_trust", "allow_new", "allow_merge"}
 
 
@@ -99,7 +99,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.30.0",
+        "version": "0.31.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
     })
 
@@ -372,7 +372,7 @@ def recall_paid():
 
 @app.route("/mesh/federated/recall", methods=["POST"])
 def federated_recall():
-    """v0.30.0 — paid federated recall across a configured peer mesh registry.
+    """v0.31.0 — paid federated recall across a configured peer mesh registry.
 
     Query THIS mesh as a paid federated peer: reputation-gate, x402-verify,
     recall, and return a trust-weighted consensus report. Auth-gated (token).
@@ -431,6 +431,37 @@ def federated_recall():
     if not report.get("ok"):
         return jsonify(report), 402
     return jsonify(report)
+
+
+@app.route("/mesh/federated/dream", methods=["POST"])
+def federated_dream():
+    """v0.31.0 — receive DREAM insight contributions into the commons gate.
+
+    Auth-gated. Body: {contributions: [{content, by?, agent_id?, trust?,
+    rep?, source_url?}], min_rep?, writeback?}
+
+    Each contribution is gated: reputation (refuse low-rep/unknown),
+    ContentValidator poison scan (malicious → quarantine, never live),
+    corroboration (matching local fact → trust bump). Returns per-insight
+    verdicts: accepted / corroborated / quarantined / refused.
+    """
+    from neural_mesh.federated_dream import FederatedDream
+
+    data = request.get_json(silent=True) or {}
+    contributions = data.get("contributions") or []
+    if not contributions:
+        return _json_error("contributions list is required", 400)
+
+    min_rep = float(data.get("min_rep",
+                             os.environ.get("NEURAL_MESH_FEDERATED_MIN_REP", "50")))
+    cap_trust = float(os.environ.get("NEURAL_MESH_FEDERATED_CAP_TRUST", "0.9"))
+    try:
+        fd = FederatedDream(mesh, min_rep=min_rep, cap_trust=cap_trust)
+        report = fd.receive(contributions, writeback=bool(data.get("writeback", True)))
+    except Exception as e:
+        return _json_error(f"federated dream error: {e}", 500)
+
+    return jsonify({"ok": True, **report})
 
 
 @app.route("/mesh/cycle", methods=["POST"])
@@ -700,7 +731,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.30.0",
+        "version": "0.31.0",
         "provenance_breakdown": provenance_breakdown,
     })
 
@@ -766,7 +797,7 @@ def erc8004_manifest():
             "crypto-economic",
             "cross-source-corroboration",
         ],
-        "version": "0.30.0",
+        "version": "0.31.0",
     })
 
 
@@ -937,9 +968,11 @@ def peer_manifest():
             "intuition_export",
             "dream_preview",
             "federated_recall",
+            "federated_dream",
         ],
         "query_endpoint": "/mesh/peer/query",
         "federated_endpoint": "/mesh/federated/recall",
+        "federated_dream_endpoint": "/mesh/federated/dream",
     })
 
 

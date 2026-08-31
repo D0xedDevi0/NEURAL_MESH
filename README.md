@@ -532,6 +532,24 @@ GENERATIVE LLM JUDGE  (real retrieval, 100 queries, top_k=5, model=deepseek-v4-f
   low-rep refusal, provenance preservation, writeback. Full regression:
   **232 tests OK**.
 
+## 🟦 v0.31.0 — Federated DREAM: Self-Healing Memory Commons (2026-08-31)
+
+- 🟦 **`neural_mesh/federated_dream.py` — `FederatedDream`**: the *supply* side
+  of the memory economy. Agents contribute their consolidated DREAM insight to
+  a shared commons, but **nothing enters the live mesh without clearing a gate**:
+  reputation (refuse low-rep/unknown) → ContentValidator poison scan (malicious
+  → quarantine lane, never live) → corroboration (matching local fact → trust
+  bump `1-(1-t_a)(1-t_b)`) → writeback with provenance intact.
+- 🟦 **`demos/federated_dream_commons.py`** — 4-contribution showcase: honest
+  corroborating insight → accepted (trust 0.60 → **0.960**), new safe insight →
+  accepted, poison insight (injection idiom) → **quarantined** (proven not
+  retrievable live), low-rep contributor → **refused**. Zero deps, zero gas.
+- 🟦 **`POST /mesh/federated/dream`** (AUTH): receive a contribution set, run the
+  gate, return per-insight verdicts. Manifest advertises `federated_dream` +
+  endpoint. Verified live: 401 unauth, accepted/quarantined/refused verdicts.
+- 🟦 **8 new tests** (`tests/test_federated_dream.py`). Full regression:
+  **240 tests OK**.
+
 
 ### LongMemEval retrieval grounding (honest, in progress)
 

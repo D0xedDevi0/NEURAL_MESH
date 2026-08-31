@@ -347,6 +347,73 @@ curl -s -X POST https://api.d0xeddev.com/mesh/federated/recall \
 
 ---
 
+## Goal 8 — v0.31.0: Federated DREAM — the Self-Healing Memory Commons 🟦 IN PROGRESS (2026-08-31)
+
+**Status:** 🟦 BUILDING — the supply side of the memory economy. v0.30 built
+*demand* (pay to buy a peer's memory); v0.31 builds *supply + self-healing*:
+agents contribute their consolidated DREAM insight to a **shared memory
+commons**, and every contribution must pass the reputation gate, the
+ContentValidator poison scan, and corroboration before it lands. Honest,
+corroborated wisdom spreads and compounds; garbage and poison get quarantined
+or refused. This is "natural selection onchain" made complete.
+
+**Outcome:** an agent runs its DREAM cycle → mints insight nodes → publishes
+them to a federated commons → peers receive, gate, scan, and corroborate each
+contribution → only insight that clears the gate lands (writeback) with its
+provenance + trust intact. A malicious or low-reputation contribution is
+quarantined / refused and never reaches the live mesh.
+
+**Why this layer:** v0.30 gave agents a way to *pay* for each other's memory but
+nothing to *give back*. Without a gated supply path, the commons can't grow
+honestly. This layer closes the loop so the mesh's DREAM cycle (already shipped
+since v0.8) becomes federated and self-selecting.
+
+### Deliverables
+🟦 `neural_mesh/federated_dream.py` — `FederatedDream` orchestrator:
+  1. **Contribute** — package a mesh's DREAM insight nodes (or a caller-supplied
+     insight list) into a portable contribution set (content, provenance, by,
+     agent_id, trust, source mesh URL).
+  2. **Gate (receive)** — for each contributed insight: reputation-gate
+     (refuse low-rep / unknown contributor), ContentValidator scan (malicious →
+     quarantine lane), corroboration against the local mesh (matches an existing
+     live node → corroboration trust bump).
+  3. **Writeback** — accepted insights land in the local mesh with
+     `provenance="federated-dream"`, `by=<contributor>`, source mesh stamped in
+     `meta`. Quarantined insight lands in `lane="quarantine"` (zero resonance,
+     zero links, audit-only). Refused insight is dropped with a reason.
+  4. **Report** — per-insight verdict: accepted / corroborated / quarantined /
+     refused, with provenance + trust preserved for downstream consensus.
+🟦 `demos/federated_dream_commons.py` — 3-mesh showcase: honest contributor's
+insight corroborates → **accepted** (trust bumped); poison insight (injection
+idiom) → **quarantined**; low-rep contributor's insight → **refused**. Zero
+external deps, real printed numbers.
+🟦 `tests/test_federated_dream.py` — RED→GREEN: honest insight accepted, poison
+quarantined, low-rep refused, corroboration bump on writeback, provenance
+stamped, malicious insight never reaches live mesh.
+🟦 `POST /mesh/federated/dream` (AUTH) — receive a contribution set, run the
+gate, return the verdict report. Manifest `capabilities` gains
+`"federated_dream"`.
+
+### Acceptance criteria
+🟦 Demo runs end-to-end with real numbers, no external deps.
+🟦 New tests GREEN; full regression (242+ OK) still passes.
+🟦 Live endpoint returns a valid gate verdict on the real mesh.
+🟦 Version bumped v0.31.0 in all spots; clean package install; deployed;
+`/health` + endpoints verified.
+🟦 X announcement posts.
+
+### Verification
+```bash
+PYTHONPATH=. python3 demos/federated_dream_commons.py
+PYTHONPATH=. python3 -m unittest tests.test_federated_dream -v
+PYTHONPATH=. python3 -m unittest discover -s tests
+curl -s -X POST https://api.d0xeddev.com/mesh/federated/dream \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{"contributions":[{"content":"...","by":"peer-x","agent_id":"peer-x","trust":0.9}]}'
+```
+
+---
+
 ## Cross-cutting contracts (apply to EVERY stage)
 
 ### Honest benchmark contract (non-negotiable)
