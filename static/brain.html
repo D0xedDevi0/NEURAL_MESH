@@ -560,28 +560,35 @@ function buildSpineVisuals(){
 
 function makeArrow(from, to, color, fk, tk){
   const mid = from.clone().add(to).multiplyScalar(0.5);
-  mid.x += 0.05; mid.z += 0.06;
+  mid.x += 0.06; mid.z += 0.07;
   const curve = new THREE.QuadraticBezierCurve3(from, mid, to);
   const pts = curve.getPoints(24);
-  const line = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(pts),
-    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.55, blending:THREE.AdditiveBlending })
+  // brighter flowing dash line (TubeGeometry with emissive) for visible pipeline
+  const tube = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 24, 0.018, 6, false),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.7, blending:THREE.AdditiveBlending })
   );
-  spineGroup.add(line);
+  spineGroup.add(tube);
+  // thin guide line underneath
+  const guide = new THREE.Line(
+    new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.25, blending:THREE.AdditiveBlending })
+  );
+  spineGroup.add(guide);
   // arrowhead cone at `to`
   const dir = to.clone().sub(from).normalize();
   const cone = new THREE.Mesh(
-    new THREE.ConeGeometry(0.045, 0.14, 8),
-    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending })
+    new THREE.ConeGeometry(0.07, 0.22, 8),
+    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending })
   );
   cone.position.copy(to);
   cone.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir);
   spineGroup.add(cone);
-  // traveling pulse dot
-  const pulse = new THREE.Mesh(
-    new THREE.SphereGeometry(0.03, 8, 8),
-    new THREE.MeshBasicMaterial({ color, transparent:true, opacity:0.9, blending:THREE.AdditiveBlending })
-  );
+  // traveling pulse dot (square, memory-mode colored)
+  const pulse = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: squareTexture(color), transparent:true, opacity:0.95, depthWrite:false, blending:THREE.AdditiveBlending
+  }));
+  pulse.scale.set(0.16,0.16,1);
   pulse.visible = false;
   spineGroup.add(pulse);
   return { curve, t: Math.random(), speed: 0.5 + Math.random()*0.4, pulse, color, from, to, fk, tk };
