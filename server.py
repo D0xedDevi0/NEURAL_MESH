@@ -33,7 +33,7 @@ AUTH_ENDPOINTS = {"add", "memory_cycle", "sleep_mesh", "consolidate_mesh",
                   "pointer_put", "pointer_summary", "dream", "export_mesh",
                   "merge", "stamp", "intuition_ingest_receipts", "eval_qa",
                   "yantrikdb_ingest", "yantrikdb_think", "helixa_attest_node",
-                  "peer_query", "mesh_audit", "federated_recall", "federated_dream"}
+                  "peer_query", "mesh_audit", "federated_recall", "federated_dream", "federation_sync"}
 POLICY_FIELDS = {"trust", "cap_trust", "allow_new", "allow_merge"}
 
 
@@ -99,7 +99,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.31.0",
+        "version": "0.32.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
     })
 
@@ -372,7 +372,7 @@ def recall_paid():
 
 @app.route("/mesh/federated/recall", methods=["POST"])
 def federated_recall():
-    """v0.31.0 — paid federated recall across a configured peer mesh registry.
+    """v0.32.0 — paid federated recall across a configured peer mesh registry.
 
     Query THIS mesh as a paid federated peer: reputation-gate, x402-verify,
     recall, and return a trust-weighted consensus report. Auth-gated (token).
@@ -433,9 +433,58 @@ def federated_recall():
     return jsonify(report)
 
 
+@app.route("/mesh/federation/sync", methods=["POST"])
+def federation_sync():
+    """v0.32.0 — run the bidirectional memory-economy reconcile loop.
+
+    Auth-gated. Body: {queries: [...], tier?, top_k?, push?}
+
+    Runs MeshFederation.reconcile(): PULL (discover → rep-gate → x402 pay →
+    recall → corroborate) then PUSH (local DREAM insight → gate into each
+    peer's commons). Returns the full ledger: corroboration-lift, poison
+    quarantined, low-rep refused, nodes written, payments. Peers come from
+    NEURAL_MESH_FEDERATED_PEERS env (real PeerClient) — none configured
+    returns a self-only ledger.
+    """
+    from neural_mesh.network import MeshFederation
+
+    data = request.get_json(silent=True) or {}
+    queries = data.get("queries") or ["memory"]
+    tier = data.get("tier", "basic")
+    top_k = int(data.get("top_k", 5))
+    push = bool(data.get("push", True))
+
+    peer_urls = [u for u in
+                 os.environ.get("NEURAL_MESH_FEDERATED_PEERS", "").split(",")
+                 if u.strip()]
+    rep_str = os.environ.get("NEURAL_MESH_FEDERATED_PEER_REPS", "")
+    reps = [float(x) for x in rep_str.split(",") if x.strip()] if rep_str else []
+
+    try:
+        fed = MeshFederation(
+            mesh,
+            min_rep=float(os.environ.get("NEURAL_MESH_FEDERATED_MIN_REP", "50")),
+            cap_trust=float(os.environ.get("NEURAL_MESH_FEDERATED_CAP_TRUST", "0.9")),
+            dry_run=os.environ.get("NEURAL_MESH_FEDERATED_DRY_RUN", "1") == "1",
+        )
+        from neural_mesh.peer import PeerClient
+        for i, u in enumerate(peer_urls):
+            rep = reps[i] if i < len(reps) else None
+            try:
+                fed.discover(u, token=os.environ.get("NEURAL_MESH_PEER_TOKEN", ""),
+                             rep=rep)
+            except Exception:
+                fed.add_peer(PeerClient(u), rep=rep if rep is not None else 0.0)
+        report = fed.reconcile(queries=queries, tier=tier, top_k=top_k, push=push)
+    except Exception as e:
+        return _json_error(f"federation sync error: {e}", 500)
+
+    return jsonify(report)
+
+
 @app.route("/mesh/federated/dream", methods=["POST"])
 def federated_dream():
-    """v0.31.0 — receive DREAM insight contributions into the commons gate.
+    """v0.32.0 — receive DREAM insight contributions into the commons gate.
 
     Auth-gated. Body: {contributions: [{content, by?, agent_id?, trust?,
     rep?, source_url?}], min_rep?, writeback?}
@@ -731,7 +780,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.31.0",
+        "version": "0.32.0",
         "provenance_breakdown": provenance_breakdown,
     })
 
@@ -797,7 +846,7 @@ def erc8004_manifest():
             "crypto-economic",
             "cross-source-corroboration",
         ],
-        "version": "0.31.0",
+        "version": "0.32.0",
     })
 
 
@@ -969,10 +1018,12 @@ def peer_manifest():
             "dream_preview",
             "federated_recall",
             "federated_dream",
+            "mesh_federation",
         ],
         "query_endpoint": "/mesh/peer/query",
         "federated_endpoint": "/mesh/federated/recall",
         "federated_dream_endpoint": "/mesh/federated/dream",
+        "federation_sync_endpoint": "/mesh/federation/sync",
     })
 
 

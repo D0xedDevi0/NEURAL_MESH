@@ -414,6 +414,72 @@ curl -s -X POST https://api.d0xeddev.com/mesh/federated/dream \
 
 ---
 
+## Goal 9 — v0.32.0: MeshFederation — the Bidirectional Economy Loop 🟦 IN PROGRESS (2026-08-31)
+
+**Status:** 🟦 BUILDING — composes v0.30 (demand/pull) + v0.31 (supply/push) into
+ONE reconciliation loop, run against a real list of peer meshes, with
+**corroboration-lift as the economic primitive**.
+
+**Outcome:** a `MeshFederation` orchestrator that, in a single `reconcile()` pass,
+both **pulls** memory from peers (discover → rep-gate → x402 pay → recall →
+corroborate) and **pushes** its own DREAM insight back (contribute → gate →
+scan → corroborate → writeback). It accounts the network's earned trust as a
+ledger: per-corroboration trust lift (old → new), poisoned insight refused, and
+low-rep contributions refused. This closes the loop completely — every node
+pays for what it takes and contributes what it knows, and corroboration is the
+currency that compounds.
+
+**On-chain receipts:** the x402 payment path already supports `dry_run=False`
+(real on-chain verification via `verify_receipt_onchain`). Broadcasting a real
+receipt tx stays **GO-gated** (gas + irreversible). This layer integrates and
+reconciles that path but does NOT broadcast.
+
+**Why this layer:** v0.30 and v0.31 shipped the two halves but nothing runs them
+together. Without a reconcile loop, a mesh either buys or contributes — never
+both. This is the layer that makes a *network* behave like one living economy.
+
+### Deliverables
+🟦 `neural_mesh/network.py` — `MeshFederation` orchestrator:
+  1. **Register** a local mesh + N peers (PeerClient or in-memory fakes) + a
+     query plan (one or more queries to reconcile on).
+  2. **`reconcile()`** — one pass:
+     - **Pull**: for each query, run `FederatedRecall` (rep-gate → pay → recall →
+       corroborate). Fold the local mesh in; collect the corroboration lifts.
+     - **Push**: package the local mesh's live nodes (optionally post-DREAM) as
+       contributions, run `FederatedDream` gate on each peer's mesh, collect
+       verdicts (accepted / corroborated / quarantined / refused).
+     - **Ledger**: aggregate total corroboration lift, poisoned refused, low-rep
+       refused, nodes written, payments made.
+  3. **`report()`** — the full network ledger with per-peer + per-query detail.
+🟦 `demos/network_economy.py` — 4-mesh bidirectional loop (hub A pulls from B/C,
+pushes to B/C; D injects poison). Real numbers: pull corroboration lifts, push
+accepted/quarantined/refused, total network trust earned. Zero external deps.
+🟦 `tests/test_network.py` — RED→GREEN: reconcile pull corroborates, push gates,
+poison quarantined on push, low-rep refused on both, ledger totals correct,
+provenance preserved.
+🟦 `POST /mesh/federation/sync` (AUTH) — run `reconcile()` against configured
+peers, return the ledger. Manifest `capabilities` gains `"mesh_federation"`.
+
+### Acceptance criteria
+🟦 Demo runs end-to-end with real numbers, no external deps.
+🟦 New tests GREEN; full regression (248+ OK) still passes.
+🟦 Live endpoint returns a valid ledger on the real mesh.
+🟦 Version bumped v0.32.0 in all spots; clean package install; deployed;
+`/health` + endpoints verified.
+🟦 X announcement posts.
+
+### Verification
+```bash
+PYTHONPATH=. python3 demos/network_economy.py
+PYTHONPATH=. python3 -m unittest tests.test_network -v
+PYTHONPATH=. python3 -m unittest discover -s tests
+curl -s -X POST https://api.d0xeddev.com/mesh/federation/sync \
+  -H "Authorization: Bearer $API_TOKEN" \
+  -d '{"queries":["Base L2 scaling"],"tier":"basic"}'
+```
+
+---
+
 ## Cross-cutting contracts (apply to EVERY stage)
 
 ### Honest benchmark contract (non-negotiable)

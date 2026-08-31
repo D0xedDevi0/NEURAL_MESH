@@ -159,7 +159,7 @@ def cmd_rust_info(args):
 def main():
     p = argparse.ArgumentParser(
         prog="neural-mesh",
-        description="Self-organizing agentic memory mesh — v0.31.0")
+        description="Self-organizing agentic memory mesh — v0.32.0")
     sp = p.add_subparsers(dest="cmd")
 
     # export
@@ -240,7 +240,7 @@ def main():
     elif args.cmd == "rust-info":
         cmd_rust_info(args)
     elif args.cmd == "version":
-        print("NEURAL_MESH v0.31.0")
+        print("NEURAL_MESH v0.32.0")
     else:
         p.print_help()
 

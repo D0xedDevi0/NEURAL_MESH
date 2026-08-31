@@ -550,6 +550,26 @@ GENERATIVE LLM JUDGE  (real retrieval, 100 queries, top_k=5, model=deepseek-v4-f
 - 🟦 **8 new tests** (`tests/test_federated_dream.py`). Full regression:
   **240 tests OK**.
 
+## v0.32.0 — MeshFederation: the Bidirectional Economy Loop 🟦
+
+Composes the demand half (v0.30 pull) and the supply half (v0.31 push) into ONE
+`MeshFederation.reconcile()` loop that runs against a real list of peer meshes.
+Corroboration-lift is the economic primitive — trust is the currency that
+compounds.
+
+- 🟦 `neural_mesh/network.py` — `MeshFederation` orchestrator: register local
+  mesh + peers (PeerClient or fakes), then one `reconcile()` pass does PULL
+  (discover → rep-gate → x402 pay → recall → corroborate) AND PUSH (local DREAM
+  insight → gate into each peer's commons). Returns a full ledger.
+- 🟦 `demos/network_economy.py` — 4-peer bidirectional loop, zero deps: pull
+  corroborates + pays $0.06, push quarantines poison across accepting peers,
+  low-rep peer refused on both legs.
+- 🟦 `POST /mesh/federation/sync` (AUTH) — run `reconcile()` against configured
+  peers, return the ledger. Manifest capability `mesh_federation` +
+  `federation_sync_endpoint`. Verified live: 401 unauth, valid ledger.
+- 🟦 **5 new tests** (`tests/test_network.py`). Full regression:
+  **245 tests OK**.
+
 
 ### LongMemEval retrieval grounding (honest, in progress)
 
