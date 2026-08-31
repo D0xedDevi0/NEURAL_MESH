@@ -321,8 +321,8 @@ function squareTexture(hex){
 
 // ── SCENE ──────────────────────────────────────
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x000410);
-scene.fog = new THREE.FogExp2(0x000410, 0.00013);
+scene.background = new THREE.Color(0x01030c);
+scene.fog = new THREE.FogExp2(0x01030c, 0.00016);
 const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.3, 100);
 camera.position.set(4, 1.6, 7.0);
 camera.lookAt(0, 0.2, 0);
@@ -331,7 +331,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.toneMapping = THREE.ReinhardToneMapping;
-renderer.toneMappingExposure = 1.4;
+renderer.toneMappingExposure = 0.95;
 document.body.appendChild(renderer.domElement);
 
 const controls = new OrbitControls(camera, renderer.domElement);
@@ -355,7 +355,7 @@ for (let i=0;i<starCount;i++){
   starPos[i*3]=r*Math.sin(phi)*Math.cos(theta); starPos[i*3+1]=r*Math.sin(phi)*Math.sin(theta); starPos[i*3+2]=r*Math.cos(phi);
 }
 starsGeo.setAttribute('position', new THREE.BufferAttribute(starPos,3));
-const stars = new THREE.Points(starsGeo, new THREE.PointsMaterial({ size:0.04, color:0xffffff, transparent:true, opacity:0.4, blending:THREE.AdditiveBlending }));
+const stars = new THREE.Points(starsGeo, new THREE.PointsMaterial({ size:0.03, color:0xffffff, transparent:true, opacity:0.18, blending:THREE.AdditiveBlending }));
 scene.add(stars);
 
 // ─── BRAIN GROUP ───────────────────────────────
@@ -365,12 +365,12 @@ const meshGroup = new THREE.Group(); brainGroup.add(meshGroup);
 brainGroup.add(linkGroup);
 brainGroup.add(helixaGroup);
 
-// Square node sprite maker
+// Square node sprite maker — solid squares so the brain reads clearly (no additive bloom)
 function makeSquareNode(n){
   const tex = squareTexture(n.color);
-  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity:1, depthWrite:false, blending:THREE.AdditiveBlending });
+  const mat = new THREE.SpriteMaterial({ map: tex, transparent:true, opacity:0.92, depthWrite:false });
   const sp = new THREE.Sprite(mat);
-  const s = n.size * 2.6;
+  const s = n.size * 2.2;
   sp.scale.set(s, s, 1);
   sp.userData = { nodeId: n.id, phase: Math.random()*Math.PI*2, baseScale: s };
   return sp;
@@ -396,7 +396,7 @@ function buildBrainVisuals(){
     const a = nodeMap[l.a], b = nodeMap[l.b];
     if (!a || !b) continue;
     const geo = new THREE.BufferGeometry().setFromPoints([a.three.position, b.three.position]);
-    const mat = new THREE.LineBasicMaterial({ color: 0x0a3a5a, transparent:true, opacity:0.05 + l.strength*0.09, blending:THREE.AdditiveBlending });
+    const mat = new THREE.LineBasicMaterial({ color: 0x0a3a5a, transparent:true, opacity:0.03 + l.strength*0.05, blending:THREE.AdditiveBlending });
     const line = new THREE.Line(geo, mat);
     linkGroup.add(line); linkLines.push({line, a:l.a, b:l.b, strength:l.strength});
   }
@@ -471,16 +471,16 @@ const STAGES = [
 
 function roundedBox(w,h,d,color,op){
   const g = new THREE.BoxGeometry(w,h,d);
-  const m = new THREE.MeshPhongMaterial({ color, transparent:true, opacity:op, shininess:60, specular:0xffffff, emissive:color, emissiveIntensity:0.15 });
+  const m = new THREE.MeshPhongMaterial({ color, transparent:true, opacity:op, shininess:70, specular:0x88ccff, emissive:color, emissiveIntensity:0.5 });
   return new THREE.Mesh(g,m);
 }
 
 function buildHumanoidBody(){
   const body = new THREE.Group();
   // Torso
-  const torso = roundedBox(0.62, 0.95, 0.4, 0x0e1a3a, 0.92); torso.position.set(0, 0.45, 0); body.add(torso);
+  const torso = roundedBox(0.62, 0.95, 0.4, 0x1a2e5e, 0.96); torso.position.set(0, 0.45, 0); body.add(torso);
   // Head
-  const head = roundedBox(0.52, 0.5, 0.44, 0x122448, 0.96); head.position.set(0, 1.62, 0.02); body.add(head);
+  const head = roundedBox(0.52, 0.5, 0.44, 0x20406e, 0.98); head.position.set(0, 1.62, 0.02); body.add(head);
   // Eyes — two small square LED eyes (guardian char lock)
   const eyeMat = new THREE.MeshBasicMaterial({ color:0x00E5FF, transparent:true, opacity:0.95, blending:THREE.AdditiveBlending });
   const eyeGeo = new THREE.BoxGeometry(0.09, 0.09, 0.02);
@@ -489,12 +489,12 @@ function buildHumanoidBody(){
   eyeL.userData.phase = Math.random()*6; eyeR.userData.phase = Math.random()*6;
   body.userData.eyes = [eyeL, eyeR];
   // Neck
-  const neck = roundedBox(0.2, 0.18, 0.2, 0x0a1630, 0.9); neck.position.set(0, 1.28, 0); body.add(neck);
+  const neck = roundedBox(0.2, 0.18, 0.2, 0x16305a, 0.95); neck.position.set(0, 1.28, 0); body.add(neck);
   // Shoulders
-  const shL = roundedBox(0.2, 0.2, 0.3, 0x0e1a3a, 0.9); shL.position.set(-0.34, 1.0, 0); body.add(shL);
-  const shR = roundedBox(0.2, 0.2, 0.3, 0x0e1a3a, 0.9); shR.position.set(0.34, 1.0, 0); body.add(shR);
+  const shL = roundedBox(0.2, 0.2, 0.3, 0x1a2e5e, 0.95); shL.position.set(-0.34, 1.0, 0); body.add(shL);
+  const shR = roundedBox(0.2, 0.2, 0.3, 0x1a2e5e, 0.95); shR.position.set(0.34, 1.0, 0); body.add(shR);
   // Arms (hanging down)
-  const armMat = new THREE.MeshPhongMaterial({ color:0x0a1630, transparent:true, opacity:0.9 });
+  const armMat = new THREE.MeshPhongMaterial({ color:0x2a4a8a, transparent:true, opacity:0.96, shininess:70, specular:0x88ccff, emissive:0x2a4a8a, emissiveIntensity:0.7 });
   for (const side of [-1,1]){
     const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.09,0.08,0.55,12), armMat);
     upper.position.set(side*0.5, 0.68, 0); upper.rotation.z = side*0.12; body.add(upper);
@@ -502,22 +502,28 @@ function buildHumanoidBody(){
     fore.position.set(side*0.58, 0.22, 0); fore.rotation.z = side*0.1; body.add(fore);
   }
   // Pelvis
-  const pelvis = roundedBox(0.5, 0.24, 0.36, 0x0e1a3a, 0.9); pelvis.position.set(0, -0.05, 0); body.add(pelvis);
+  const pelvis = roundedBox(0.5, 0.24, 0.36, 0x1a2e5e, 0.95); pelvis.position.set(0, -0.05, 0); body.add(pelvis);
   // Legs
   for (const side of [-1,1]){
     const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.11,0.1,0.55,12), armMat);
     thigh.position.set(side*0.16, -0.4, 0); body.add(thigh);
     const shin = new THREE.Mesh(new THREE.CylinderGeometry(0.1,0.08,0.55,12), armMat);
     shin.position.set(side*0.16, -0.88, 0); body.add(shin);
-    const foot = roundedBox(0.24,0.08,0.34, 0x0e1a3a, 0.9);
+    const foot = roundedBox(0.24,0.08,0.34, 0x1a2e5e, 0.95);
     foot.position.set(side*0.16, -1.18, 0.08); body.add(foot);
   }
-  // Wireframe overlay for digital-body look
+  // Wireframe overlay for digital-body look — brighter so the silhouette reads
   const wire = new THREE.Mesh(
-    new THREE.BoxGeometry(0.64, 1.0, 0.42),
-    new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.08, blending:THREE.AdditiveBlending })
+    new THREE.BoxGeometry(0.66, 1.02, 0.44),
+    new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.22, blending:THREE.AdditiveBlending })
   );
   wire.position.set(0, 0.45, 0); body.add(wire);
+  // subtle cyan outline rim around the torso to lift the figure off the background
+  const rim = new THREE.Mesh(
+    new THREE.BoxGeometry(0.7, 1.08, 0.5),
+    new THREE.MeshBasicMaterial({ color:0x00E5FF, wireframe:true, transparent:true, opacity:0.06, blending:THREE.AdditiveBlending })
+  );
+  rim.position.set(0, 0.45, 0); body.add(rim);
   body.traverse(o => { if (o.isMesh) o.userData.bodyPart = true; });
   return body;
 }
@@ -891,12 +897,12 @@ function animate(){
       for (const id in nodeMap){
         const m = nodeMap[id].three;
         const isDream = nodeMap[id].data.lane==='dream' || nodeMap[id].data.provenance==='dream-muse';
-        const amp = isDream ? 0.28 : 0.13;
+        const amp = isDream ? 0.14 : 0.07;
         const freq = isDream ? 3.0 : 2.2;
         m.scale.setScalar(m.userData.baseScale * (1 + Math.sin(t*freq + m.userData.phase)*amp));
       }
-      // ambient synapse firing — pick random link, fire a pulse along it
-      if (Math.random() < 0.18 && linkLines.length){
+      // ambient synapse firing — fire a pulse occasionally so it's lively but not frantic
+      if (Math.random() < 0.06 && linkLines.length){
         const l = linkLines[Math.floor(Math.random()*linkLines.length)];
         const src = nodeMap[l.a]; const dst = nodeMap[l.b];
         if (src && dst && Math.random() < 0.9) fireSynapse(l.a, l.b, src.data.color);
