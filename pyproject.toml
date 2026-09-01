@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "neural-mesh"
-version = "0.32.0"
+version = "0.34.0"
 description = "Self-organizing, self-forgetting agentic memory mesh — resonance retrieval beats flat vector search"
 readme = "README.md"
 license = {text = "MIT"}

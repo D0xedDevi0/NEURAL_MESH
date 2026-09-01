@@ -43,6 +43,8 @@ from .proof_cards import (
 from .server_security import RateLimiter, auth_ok, origin_allowed, safe_path
 from .reader_llm import LLMReader
 from .eval import QAJudge, run_qa_eval, load_test_set
+from .bonds import BondLedger, settlement_verdict
+from .bond_escrow import BondEscrow, build_escrow_calldata, escrow_status
 # Lazy imports for optional heavy deps — only loaded when actually used,
 # so `pip install neural-mesh` works without eth-account / yantrikdb.
 _LAZY = {}
@@ -81,5 +83,7 @@ __all__ = ["Mesh", "MemoryType", "export_mesh", "import_mesh",
            "LLMReader", "QAJudge", "run_qa_eval", "load_test_set",
            "HelixaSigner",
            "PaidRecallGate", "TIERS", "SERVICE_NAME", "verify_receipt_onchain",
-           "RECEIPT_CONTRACT", "FEE_RECIPIENT", "BASE_RPC"]
-__version__ = "0.32.0"
+           "RECEIPT_CONTRACT", "FEE_RECIPIENT", "BASE_RPC",
+           "BondLedger", "settlement_verdict",
+           "BondEscrow", "build_escrow_calldata", "escrow_status"]
+__version__ = "0.34.0"

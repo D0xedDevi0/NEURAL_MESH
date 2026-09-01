@@ -48,6 +48,7 @@ USAGE
 from __future__ import annotations
 
 import hashlib
+import math
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -57,6 +58,33 @@ from .x402_recall import TIERS, RECEIPT_CONTRACT, FEE_RECIPIENT
 def _content_hash(content: str) -> str:
     """Normalised content fingerprint (same rule as sharing.py)."""
     return hashlib.sha1(content.strip().lower().encode()).hexdigest()[:16]
+
+
+def bond_trust_adjustment(bond_stats: dict) -> dict:
+    """Map a ``BondLedger.stats()`` dict to a federation trust adjustment.
+
+    Proof-of-Memory economizes the trust scalar: a peer with live stake in
+    the game (bonded value) deserves a HIGHER trust cap, while a peer with a
+    history of slashed bonds (it lied and got caught) deserves a LOWER one.
+
+    Returns ``{bonded_value_usdc, slash_risk, adjustment}`` where `adjustment`
+    is a multiplicative modifier on a peer's trust cap (floored at 0.25 so a
+    slash history degrades but never silently zeroes a peer).
+    """
+    bonds = int(bond_stats.get("bonds", 0) or 0)
+    slashed = int(bond_stats.get("slashed", 0) or 0)
+    bonded_value = int(bond_stats.get("total_stake_usdc", 0) or 0)
+    slash_risk = (slashed / bonds) if bonds else 0.0
+    # Bonded value adds up to +0.25 (log-scaled); slash risk subtracts up to
+    # 0.5. A peer that stakes real value and rarely gets slashed gains trust.
+    value_bonus = (min(0.25, 0.05 * math.log10(1 + bonded_value))
+                   if bonded_value else 0.0)
+    adjustment = 1.0 + value_bonus - (0.5 * slash_risk)
+    return {
+        "bonded_value_usdc": bonded_value,
+        "slash_risk": round(slash_risk, 4),
+        "adjustment": round(max(0.25, adjustment), 4),
+    }
 
 
 @dataclass
@@ -98,10 +126,17 @@ class FederatedRecall:
         self.dry_run = dry_run
         self.mock_proof = mock_proof
         self._rep_resolver = rep_resolver
+        self._bond_ledger = None
         self.peers: dict[str, dict[str, Any]] = {}  # url -> {"client": ..., "rep": ...}
         self._consumed: set[str] = set()            # replay prevention
 
     # ── Peer registration ──────────────────────────────────────────────────
+    def set_bond_ledger(self, ledger) -> None:
+        """Attach a ``BondLedger`` so the reputation gate folds in
+        proof-of-memory: peers with live bonded value (skin in the game) get a
+        higher trust cap, peers with slash history a lower one."""
+        self._bond_ledger = ledger
+
     def add_peer(self, client, rep: float | None = None) -> None:
         """Register a peer. *client* may be a PeerClient or any object exposing
         ``.manifest`` and ``.paid_recall(query, tier, proof_header, top_k=...)``.
@@ -163,9 +198,19 @@ class FederatedRecall:
             # Reputation scales the cap: a 100-rep peer is trusted fully up to
             # cap_trust; a peer just above the floor is capped lower.
             cap = self.cap_trust * (0.5 + 0.5 * (rep / 100.0))
+            # Fold in proof-of-memory: bonded value raises the cap, slash
+            # history lowers it.
+            bond_adj = {}
+            if self._bond_ledger is not None:
+                try:
+                    bond_adj = bond_trust_adjustment(self._bond_ledger.stats())
+                    cap = round(min(1.0, max(0.0, cap * bond_adj["adjustment"])), 4)
+                except Exception:
+                    bond_adj = {}
             gates[url] = PeerGate(url, rep, allowed, cap,
                                   "ok" if allowed else
                                   f"refused: rep {rep:.0f} < min {self.min_rep:.0f}")
+            gates[url].__dict__["bond"] = bond_adj
         return gates
 
     # ── Pay + recall ───────────────────────────────────────────────────────
@@ -368,4 +413,5 @@ class FederatedRecall:
         }
 
 
-__all__ = ["FederatedRecall", "PeerGate", "_content_hash"]
+__all__ = ["FederatedRecall", "PeerGate", "_content_hash",
+           "bond_trust_adjustment"]

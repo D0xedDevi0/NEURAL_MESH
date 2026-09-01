@@ -550,6 +550,39 @@ GENERATIVE LLM JUDGE  (real retrieval, 100 queries, top_k=5, model=deepseek-v4-f
 - 🟦 **8 new tests** (`tests/test_federated_dream.py`). Full regression:
   **240 tests OK**.
 
+## v0.34.0 — Proof-of-Memory (PoM): memory you'd bet on 🟦
+
+Turns the mesh's **trust scalar into collateral**. An agent stakes USDC behind
+a memory claim (a bond); independent corroboration earns it yield from an
+x402-funded truth pool; falsification **slashes the stake to the challenger**.
+The settlement function is the mesh's *own* truth machinery — versioning
+(supersede), consensus (conflict_group), quarantine (poison), temporal
+staleness — so there is **no central oracle** and no new judge to trust.
+Filecoin proves *storage*; PoM proves *memory truth*.
+
+- 🟦 `neural_mesh/bonds.py` — `BondLedger`: `stake_claim` / `corroborate_claim`
+  / `challenge_claim` / `settle_claim` / `release_claim`, pure stdlib, dry-run
+  (micro-USDC integers). `settlement_verdict()` is a deterministic, replayable
+  pure function of mesh state at settlement height.
+- 🟦 `neural_mesh/bond_escrow.py` — on-chain USDC escrow/slash leg (Base).
+  `build_escrow_calldata()` emits the real ABI calldata; dry-run default, real
+  broadcast GO-gated + fail-closed without a funded signer. Honest gap doc in
+  `docs/proof_of_memory_onchain_gap.md`.
+- 🟦 `bench/bond_economics.py` — the honest ablation: **cost-to-lie > 0 with a
+  bond, == 0 without** (50/50 lies slashed vs 50/50 free), emits
+  `docs/assets/bond_economics.svg`. Pinned by `tests/test_bond_economics.py`.
+- 🟦 `neural_mesh/federation.py` — `bond_trust_adjustment()`: bonded value
+  raises a peer's trust cap, slash history lowers it (floored, never zeroed).
+  `FederatedRecall.set_bond_ledger()` folds it into the reputation gate.
+- 🟦 `neural_mesh/reputation.py` — `mesh_signal(bond_stats=...)` exports
+  `bonded_value_usdc` + `slash_risk` into the ERC-8004 signal. Manifest
+  `capabilities` gains `proof_of_memory`.
+- 🟦 `demos/bond_economy.py` — 4-agent showcase (honest earns, liar slashed,
+  stale superseded, contested resolved by consensus), zero deps.
+- 🟦 **36 new tests** (`tests/test_bonds.py`, `test_bond_economics.py`,
+  `test_bond_escrow.py`, `test_bond_federation.py`). Full regression:
+  **278 tests OK**.
+
 ## v0.32.0 — MeshFederation: the Bidirectional Economy Loop 🟦
 
 Composes the demand half (v0.30 pull) and the supply half (v0.31 push) into ONE

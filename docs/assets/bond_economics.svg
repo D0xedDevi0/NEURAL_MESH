@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#000410"/>
+  <text x="30" y="40" font-family="monospace" font-size="22" fill="#00d4ff" font-weight="bold">Proof-of-Memory — cost to lie</text>
+  <text x="30" y="64" font-family="monospace" font-size="13" fill="#8b949e">mean liar cost per false claim (N=50, seed=1337)</text>
+  <line x1="130" y1="280" x2="510" y2="280" stroke="#30363d" stroke-width="2"/>
+  <text x="20" y="170.0" text-anchor="middle" font-family="monospace" font-size="13" fill="#8b949e" transform="rotate(-90 20 170.0)">USDC lost by liar</text>
+  <rect x="170" y="71" width="120" height="209" fill="#00d4ff" rx="6"/><text x="230.0" y="59" text-anchor="middle" font-family="monospace" font-size="16" fill="#e6edf3">$0.10</text><text x="230.0" y="306" text-anchor="middle" font-family="monospace" font-size="15" fill="#8b949e">with bond</text>
+  <rect x="350" y="269" width="120" height="11" fill="#f85149" rx="6"/><text x="410.0" y="257" text-anchor="middle" font-family="monospace" font-size="16" fill="#e6edf3">$0.00</text><text x="410.0" y="306" text-anchor="middle" font-family="monospace" font-size="15" fill="#8b949e">without bond</text>
+  <text x="170" y="338" font-family="monospace" font-size="13" fill="#8b949e">50/50 lies slashed · challenger nets $5.00</text>
+  <text x="350" y="338" font-family="monospace" font-size="13" fill="#8b949e">0/50 cost the liar nothing</text>
+</svg>

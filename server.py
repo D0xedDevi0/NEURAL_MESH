@@ -99,7 +99,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.32.0",
+        "version": "0.34.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
     })
 
@@ -780,7 +780,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.32.0",
+        "version": "0.34.0",
         "provenance_breakdown": provenance_breakdown,
     })
 
@@ -845,8 +845,9 @@ def erc8004_manifest():
             "reputation",
             "crypto-economic",
             "cross-source-corroboration",
+            "proof-of-memory",
         ],
-        "version": "0.32.0",
+        "version": "0.34.0",
     })
 
 
@@ -1019,6 +1020,7 @@ def peer_manifest():
             "federated_recall",
             "federated_dream",
             "mesh_federation",
+            "proof_of_memory",
         ],
         "query_endpoint": "/mesh/peer/query",
         "federated_endpoint": "/mesh/federated/recall",

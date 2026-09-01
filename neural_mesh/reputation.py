@@ -56,7 +56,8 @@ def _sha256_hex(data: bytes) -> str:
 
 # ─── Mesh signal extraction ────────────────────────────────────────────────
 
-def mesh_signal(mesh, agent_id: str = "", window_days: int = 30) -> dict:
+def mesh_signal(mesh, agent_id: str = "", window_days: int = 30,
+                bond_stats: dict | None = None) -> dict:
     """Extract trust signals for one agent (or the whole mesh) from live nodes.
 
     Returns a dict of signals that map onto ERC-8004 feedback tags:
@@ -66,6 +67,11 @@ def mesh_signal(mesh, agent_id: str = "", window_days: int = 30) -> dict:
       corroborated:    0-100 share of nodes with corroborated consensus
       helixa_verified: 0-100 share of nodes with verified Helixa stamps
       poisoned_rate:   0-100 share of nodes quarantined by ContentValidator
+
+    When ``bond_stats`` (a ``BondLedger.stats()`` dict) is supplied, two
+    proof-of-memory signals are appended:
+      bonded_value_usdc: live stake behind the mesh's claims (skin in the game)
+      slash_risk:        0-1 share of bonds that settled as falsified
 
     Trust aggregation is corroboration-aware: a node that multiple agents
     confirmed counts more than a lone unverified claim. This is the SAME
@@ -123,6 +129,13 @@ def mesh_signal(mesh, agent_id: str = "", window_days: int = 30) -> dict:
         "helixa_verified": round((helixa_verified / total) * 100, 2),
         "poisoned_rate": round((quarantined / total) * 100, 2),
     }
+
+    # Proof-of-memory signals (only when a bond ledger is attached).
+    if bond_stats:
+        bonds = int(bond_stats.get("bonds", 0) or 0)
+        slashed = int(bond_stats.get("slashed", 0) or 0)
+        signals["bonded_value_usdc"] = int(bond_stats.get("total_stake_usdc", 0) or 0)
+        signals["slash_risk"] = round((slashed / bonds), 4) if bonds else 0.0
 
     # Per-agent breakdown (who authored what share of the signal)
     agent_breakdown = {

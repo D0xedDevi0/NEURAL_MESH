@@ -474,8 +474,58 @@ PYTHONPATH=. python3 demos/network_economy.py
 PYTHONPATH=. python3 -m unittest tests.test_network -v
 PYTHONPATH=. python3 -m unittest discover -s tests
 curl -s -X POST https://api.d0xeddev.com/mesh/federation/sync \
-  -H "Authorization: Bearer $API_TOKEN" \
+  -H "Authorization: Bearer ***" \
   -d '{"queries":["Base L2 scaling"],"tier":"basic"}'
+```
+
+---
+
+## Goal 10 — v0.34.0: Proof-of-Memory (PoM) — memory you'd bet on 🟦 DONE (2026-09-01)
+
+**Status:** 🟦 DONE — turns the mesh's trust scalar into **collateral**. An agent
+stakes USDC behind a memory claim (a bond); independent corroboration earns it
+yield from an x402-funded truth pool; falsification **slashes the stake to the
+challenger**. Settlement is the mesh's *own* truth machinery (supersede /
+consensus / quarantine / staleness) — no central oracle, no new judge.
+
+**Why this layer:** v0.32 made corroboration "the currency" as a metaphor — a
+floating trust number with no economic skin in the game. PoM economizes it:
+Filecoin proves *storage*; PoM proves *memory truth*. A decentralized trust
+primitive with no central reputation authority, on Base (USDC + x402 + ERC-8004
+already wired).
+
+### Deliverables
+🟦 `neural_mesh/bonds.py` — `BondLedger` (`stake_claim` / `corroborate_claim` /
+`challenge_claim` / `settle_claim` / `release_claim`) + `settlement_verdict()` —
+a deterministic, replayable pure function of mesh state. Pure stdlib, dry-run
+micro-USDC.
+🟦 `neural_mesh/bond_escrow.py` — on-chain USDC escrow/slash leg (Base):
+`build_escrow_calldata()` emits real ABI calldata; dry-run default, real
+broadcast GO-gated + fail-closed without a funded signer.
+🟦 `bench/bond_economics.py` — honest ablation: cost-to-lie > 0 with a bond,
+== 0 without. Emits `docs/assets/bond_economics.svg`. Pinned by tests.
+🟦 `neural_mesh/federation.py` — `bond_trust_adjustment()` + `set_bond_ledger()`:
+bonded value raises a peer's trust cap, slash history lowers it (floored).
+🟦 `neural_mesh/reputation.py` — `mesh_signal(bond_stats=...)` exports
+`bonded_value_usdc` + `slash_risk`. Manifest `capabilities` gains `proof_of_memory`.
+🟦 `demos/bond_economy.py` — 4-agent showcase, zero deps.
+
+### Acceptance criteria
+🟦 Demo runs end-to-end with real numbers, no external deps.
+🟦 33 new tests GREEN; full regression **278 OK**.
+🟦 Settlement deterministic + replayable — pinned.
+🟦 Onchain leg dry-run default, real broadcast GO-gated (documented gap).
+🟦 Version bumped v0.34.0 in all spots; clean install `neural-mesh==0.34.0`;
+deployed; `/health` verified.
+🟦 X announcement posted + verified.
+
+### Verification
+```bash
+PYTHONPATH=. python3 demos/bond_economy.py
+PYTHONPATH=. python3 bench/bond_economics.py
+PYTHONPATH=. python3 -m unittest tests.test_bonds tests.test_bond_economics tests.test_bond_escrow tests.test_bond_federation -v
+PYTHONPATH=. python3 -m unittest discover -s tests
+curl -s https://api.d0xeddev.com/health   # expect version 0.34.0
 ```
 
 ---
