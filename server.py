@@ -77,7 +77,9 @@ mesh = Mesh(
     db_path=DB_PATH,
     resonance_backend=os.environ.get("NEURAL_MESH_RESONANCE_BACKEND", "auto"),
 )
-mesh.db = sqlite3.connect(DB_PATH, check_same_thread=False)  # Overwrite with thread-safe connection
+# Shared across Flask worker threads — attach it through the lock proxy so
+# concurrent requests can never step the same sqlite3 connection at once.
+mesh.attach_connection(sqlite3.connect(DB_PATH, check_same_thread=False))
 mesh.db.row_factory = sqlite3.Row  # Critical: Mesh._load() indexes rows by column name
 POINTER_ROOT = os.environ.get(
     "NEURAL_MESH_POINTER_ROOT",
@@ -657,8 +659,17 @@ def dream():
     dream_report = report["dream"]
     dream_report["lanes"] = report["lanes"]
     dream_report["stats"] = report["stats"]
-    if muse_mode == "llm" and muse_fn is None:
-        dream_report["muse_fallback"] = "template (LLM unavailable)"
+    if muse_mode == "llm":
+        try:
+            from neural_mesh.muse import LAST_MUSE_STATUS as _muse_status
+        except Exception:
+            _muse_status = {}
+        if muse_fn is None or _muse_status.get("degraded"):
+            dream_report["muse_fallback"] = "template (LLM unavailable)"
+            if _muse_status.get("errors"):
+                dream_report["muse_errors"] = _muse_status["errors"]
+        elif _muse_status:
+            dream_report["muse_model"] = _muse_status.get("model")
     return jsonify(dream_report)
 
 # ─── Sharing ───────────────────────────────────────────────────────────────

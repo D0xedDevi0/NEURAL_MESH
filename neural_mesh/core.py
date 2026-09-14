@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import threading
 import time
 
 from .embed import embed
@@ -14,6 +15,59 @@ from .node import MemoryNode, MemoryType
 from .resonance import retrieve as _resonance_retrieve, _select_backend
 from .security import (QUARANTINE_LANE, ContentValidator, content_fingerprint,
                        corroboration_bump, is_corroborated)
+
+
+class _LockedConnection:
+    """Thread-safe proxy around a shared sqlite3 connection.
+
+    Flask's dev server runs threaded (app.run() defaults threaded=True) and
+    the service shares ONE connection (check_same_thread=False). Two threads
+    touching the same sqlite3 connection at once corrupt the C-level statement
+    state, which surfaces as SystemError: error return without exception set
+    raised out of db.commit(). That killed every DREAM cycle that overlapped
+    a concurrent write (e.g. /mesh/add) during the Reinforce/Archive phases.
+
+    Serializing each connection call on one re-entrant lock fixes it without a
+    schema change or per-call-site edits.
+    """
+
+    def __init__(self, conn, lock):
+        object.__setattr__(self, "_conn", conn)
+        object.__setattr__(self, "_lock", lock)
+
+    def execute(self, *a, **k):
+        with self._lock:
+            return self._conn.execute(*a, **k)
+
+    def executemany(self, *a, **k):
+        with self._lock:
+            return self._conn.executemany(*a, **k)
+
+    def executescript(self, *a, **k):
+        with self._lock:
+            return self._conn.executescript(*a, **k)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def rollback(self):
+        with self._lock:
+            return self._conn.rollback()
+
+    def close(self):
+        with self._lock:
+            return self._conn.close()
+
+    def cursor(self):
+        with self._lock:
+            return self._conn.cursor()
+
+    def __getattr__(self, name):
+        return getattr(object.__getattribute__(self, "_conn"), name)
+
+    def __setattr__(self, name, value):
+        setattr(object.__getattribute__(self, "_conn"), name, value)
 
 
 class Mesh:
@@ -33,7 +87,10 @@ class Mesh:
             raise ValueError("quarantine_policy must be 'strict', 'malicious-only', or 'off'")
         if lexical_backend not in {"bow", "bm25"}:
             raise ValueError("lexical_backend must be 'bow' or 'bm25'")
-        self.db = sqlite3.connect(db_path)
+        # One connection, guarded by a re-entrant lock: the service is
+        # threaded and shares this connection across requests.
+        self._db_lock = threading.RLock()
+        self.db = _LockedConnection(sqlite3.connect(db_path), self._db_lock)
         self.db.row_factory = sqlite3.Row
         self.embedder = embedder
         self.link_threshold = link_threshold
@@ -60,6 +117,12 @@ class Mesh:
         # (it can't via our API, but be safe) drop them too.
         if hasattr(self, "_lex_cache"):
             self._lex_cache.clear()
+
+    def attach_connection(self, conn) -> "_LockedConnection":
+        """Install an externally created sqlite3 connection behind the
+        thread-safe lock proxy (server.py swaps in a shared connection)."""
+        self.db = _LockedConnection(conn, self._db_lock)
+        return self.db
 
     # ---------- persistence ----------
     def _init_db(self):
