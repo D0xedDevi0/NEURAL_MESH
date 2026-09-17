@@ -530,6 +530,56 @@ curl -s https://api.d0xeddev.com/health   # expect version 0.34.0
 
 ---
 
+## Goal 11 — v0.35.0: "Temporal Mesh" — bi-temporal recall + reality reconciliation 🟦 (this upgrade)
+
+**Status:** building (~289 tests GREEN so far; two structural gaps closed).
+
+**Thesis:** every flat vector store answers only "what do we believe NOW"; it
+cannot answer "what did we believe on Sep 3?" because the superseded state is
+gone. NEURAL_MESH already *keeps* superseded nodes (versioning) — this upgrade
+adds the missing *time axis* as a first-class query, plus the *reality half*
+the Sibyl winners proved load-bearing. Two pure-stdlib, deterministic,
+pip-free modules close the two structural gaps the field is converging on
+(Zep/Graphiti bi-temporality, Rayyer's chain reconciliation).
+
+### Theme A — bi-temporal recall (`neural_mesh/temporal.py`)
+🟦 `MemoryNode` gains `valid_from` / `valid_to` (bi-temporal validity window);
+`valid_from` defaults to `created_at`, `valid_to == 0` = open interval.
+🟦 `_supersede` now **stamps `valid_to`** on the superseded fact, so "when did
+this fact stop being true" becomes queryable, not just "it was replaced".
+🟦 `valid_at(node, t)` — is the fact true at time t?
+🟦 `snapshot(mesh, as_of)` — all live nodes true at as_of.
+🟦 `recall_asof(mesh, q, as_of)` — dense recall within the snapshot.
+🟦 `history(mesh, node_id)` — the version timeline (audit trail of a belief).
+🟦 `resolve_at(mesh, node_id, t)` — which version was current at t.
+🟦 `Mesh.snapshot()` / `Mesh.recall_asof()` methods + `/mesh/snapshot` and
+`/mesh/recall_asof` HTTP routes.
+
+### Theme B — reality reconciliation (`neural_mesh/reconcile.py`)
+🟦 `ReconcileGate` verdicts a mesh claim against on-chain reality: `match` /
+`mismatch` / `unverifiable`. Any `mismatch` = **VETO** (memory won't drive an
+action it contradicts). Fail-open vs fail-closed on unverifiable.
+🟦 Read-only, stdlib JSON-RPC against Base mainnet (`eth_balance`, `tx_status`,
+`contract_code`, `erc20_balance`, `erc20_supply`, `block_height`); injectable
+`fetcher` for hermetic tests. No signing, no broadcast.
+🟦 `Mesh.reconcile(claims)` method + `/mesh/reconcile` HTTP route.
+
+### Theme C — mesh diet (prod housekeeping)
+🟦 Supersede-prune the accumulated `dream-muse` echo-chamber bloat (74.6% of
+prod nodes at last read).
+
+### Acceptance criteria
+🟦 14+ new tests GREEN across lib + server routes; full regression passes.
+🟦 Bi-temporal property pinned: `recall_asof` before a supersede returns the
+old truth, after returns the new — both recoverable from one store.
+🟦 Reconcile property pinned: MATCH allows, MISMATCH vetoes, UNVERIFIABLE obeys
+fail-open/closed policy.
+🟦 Version bumped v0.35.0 in all spots; deployed; `/health` verified.
+🟦 Prod dream-muse bloat reduced; before/after node counts recorded.
+🟦 X announcement posted + verified.
+
+---
+
 ## Cross-cutting contracts (apply to EVERY stage)
 
 ### Honest benchmark contract (non-negotiable)

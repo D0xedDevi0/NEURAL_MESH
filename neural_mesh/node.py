@@ -35,12 +35,17 @@ class MemoryNode:
     superseded_by: str = ""
     agent_id: str = ""           # contributor agent id ("" = local/self)
     conflict_group: str = ""     # shared id linking contradictory nodes
+    valid_from: float = 0.0      # when this fact became true (bi-temporal lower bound)
+    valid_to: float = 0.0        # when it ceased being true (0.0 = still true / open interval)
     meta: dict = field(default_factory=dict)  # extensible provenance (e.g. Helixa stamp)
 
     def __post_init__(self):
         if not self.created_at:
             self.created_at = time.time()
             self.last_accessed = self.created_at
+        if not self.valid_from:
+            # A fact is true from when it entered the mesh unless stated otherwise.
+            self.valid_from = self.created_at
         if not self.id:
             self.id = uuid.uuid4().hex[:12]
         # "by" is the human-readable attribution primitive: *remembering is BY
@@ -72,6 +77,8 @@ class MemoryNode:
                 "superseded_by": self.superseded_by,
                 "agent_id": self.agent_id,
                 "conflict_group": self.conflict_group,
+                "valid_from": self.valid_from,
+                "valid_to": self.valid_to,
                 "meta": self.meta,
             },
         )
@@ -98,5 +105,7 @@ class MemoryNode:
         n.superseded_by = meta.get("superseded_by", "")
         n.agent_id = meta.get("agent_id", "")
         n.conflict_group = meta.get("conflict_group", "")
+        n.valid_from = meta.get("valid_from", 0.0)
+        n.valid_to = meta.get("valid_to", 0.0)
         n.meta = meta.get("meta", {})
         return n

@@ -268,6 +268,7 @@ class Mesh:
             lane: str = "hot", provenance: str = "", prospective_at: float = 0.0,
             supersedes: str = "", agent_id: str = "", trust: float = 1.0,
             by: str = "", conflict_group: str = "", meta: "dict | None" = None,
+            valid_from: float = 0.0, valid_to: float = 0.0,
             **extra_meta) -> MemoryNode:
         emb = self.embedder(content)
         self._invalidate_cache()
@@ -276,7 +277,8 @@ class Mesh:
         node = MemoryNode(id="", type=type, content=content, embedding=emb,
                           lane=lane, provenance=provenance,
                           agent_id=agent_id, trust=trust, by=by,
-                          conflict_group=conflict_group)
+                          conflict_group=conflict_group,
+                          valid_from=valid_from, valid_to=valid_to)
         if meta or extra_meta:
             node.meta = dict(node.meta or {})
             if meta:
@@ -346,6 +348,7 @@ class Mesh:
         if not old:
             return
         old.superseded_by = new_node.id
+        old.valid_to = time.time()   # bi-temporal: the old fact ceased being true NOW
         old.links["supersedes::" + new_node.id] = 1.0
         new_node.links["superseded::" + old_id] = 1.0
         self._save(old)
@@ -543,6 +546,45 @@ class Mesh:
         for n in hits:
             self._touch(n, writeback=writeback)
         return hits
+
+    # ---------- TEMPORAL (bi-temporal point-in-time recall) ----------
+    def snapshot(self, as_of: "float | None" = None) -> "list[MemoryNode]":
+        """All live nodes true at ``as_of`` (default now).
+
+        Bi-temporal validity: a node is "true at t" when
+        ``valid_from <= t`` and ``valid_to == 0`` (open) or ``valid_to > t``.
+        Superseded facts carry a stamped ``valid_to`` so they drop out of any
+        snapshot after their replacement — this is the mesh's answer to
+        "what did we believe at time T", the capability flat vector stores
+        structurally cannot express.
+
+        Lazy-imports the temporal module (keeps core pip-free and light)."""
+        from .temporal import snapshot as _snapshot
+        return _snapshot(self, as_of=as_of)
+
+    def recall_asof(self, query: str, as_of: "float | None" = None,
+                    top_k: int = 5, writeback: bool = False) -> "list[MemoryNode]":
+        """Point-in-time dense recall: rank only nodes true at ``as_of``.
+
+        Same dense ranking as ``dense_recall``, but the candidate set is the
+        bi-temporal ``snapshot(as_of)`` — so a superseded fact (now false) is
+        never surfaced for a query pinned before its replacement."""
+        from .temporal import recall_asof as _recall_asof
+        return _recall_asof(self, query, as_of=as_of, top_k=top_k,
+                            writeback=writeback)
+
+    # ---------- RECONCILE (memory vs on-chain reality) ----------
+    def reconcile(self, claims: list, fetcher=None, fail_open: bool = True):
+        """Gate mesh claims against on-chain reality before they drive action.
+
+        ``claims`` is a list of dicts (see ``neural_mesh.reconcile`` for the
+        claim schema). Returns a ReconcileReport with per-claim verdicts and an
+        ``allow`` flag that is False iff any claim MISMATCHes (a VETO). Lazy-
+        imports the reconcile module so the core never loads HTTP/chain deps
+        unless used."""
+        from .reconcile import ReconcileGate
+        return ReconcileGate(self, fetcher=fetcher,
+                             fail_open=fail_open).reconcile(claims)
 
     # ---------- SLEEP: replay -> strengthen -> prune ----------
     def fused_recall(self, query: str, top_k: int = 5, alpha: float = 0.6,

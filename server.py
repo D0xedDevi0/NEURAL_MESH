@@ -101,7 +101,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.34.0",
+        "version": "0.35.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
     })
 
@@ -326,6 +326,55 @@ def recall():
         "enhanced": enhanced,
         "yantrikdb": {"status": yantrikdb_status, "hits": len(yantrikdb_hits),
                       "results": yantrikdb_hits} if enhanced else None,
+    })
+
+
+@app.route("/mesh/recall_asof", methods=["POST"])
+def recall_asof_route():
+    """Body: {query, as_of?, limit?} — bi-temporal point-in-time recall."""
+    data = request.get_json()
+    as_of = data.get("as_of")
+    nodes = mesh.recall_asof(data["query"], as_of=as_of,
+                             top_k=data.get("limit", 10))
+    results = [
+        {"id": n.id, "content": n.content, "type": n.type.value,
+         "lane": n.lane, "trust": n.trust,
+         "valid_from": getattr(n, "valid_from", 0.0),
+         "valid_to": getattr(n, "valid_to", 0.0)}
+        for n in nodes
+    ]
+    return jsonify({"results": results, "as_of": as_of})
+
+
+@app.route("/mesh/snapshot", methods=["POST"])
+def snapshot_route():
+    """Body: {as_of?} — all live nodes true at as_of (bi-temporal validity)."""
+    data = request.get_json() or {}
+    nodes = mesh.snapshot(as_of=data.get("as_of"))
+    results = [
+        {"id": n.id, "content": n.content, "lane": n.lane,
+         "valid_from": getattr(n, "valid_from", 0.0),
+         "valid_to": getattr(n, "valid_to", 0.0)}
+        for n in nodes
+    ]
+    return jsonify({"results": results, "count": len(results)})
+
+
+@app.route("/mesh/reconcile", methods=["POST"])
+def reconcile_route():
+    """Body: {claims: [...], fail_open?} — gate memory claims vs on-chain reality."""
+    data = request.get_json()
+    claims = data.get("claims", [])
+    report = mesh.reconcile(claims, fail_open=data.get("fail_open", True))
+    verdicts = [
+        {"code": v.code, "actual": v.actual, "expected": v.expected,
+         "detail": v.detail, "fact": v.claim.get("fact", "")}
+        for v in report.verdicts
+    ]
+    return jsonify({
+        "allow": report.allow,
+        "vetoes": report.vetoes,
+        "verdicts": verdicts,
     })
 
 
@@ -791,7 +840,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.34.0",
+        "version": "0.35.0",
         "provenance_breakdown": provenance_breakdown,
     })
 
@@ -858,7 +907,7 @@ def erc8004_manifest():
             "cross-source-corroboration",
             "proof-of-memory",
         ],
-        "version": "0.34.0",
+        "version": "0.35.0",
     })
 
 
