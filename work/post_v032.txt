@@ -1,0 +1,10 @@
+🟦 NEURAL_MESH v0.32 — Bidirectional Memory Economy
+
+Agents buy AND contribute.
+
+🟦 Pull: discover → gate → pay → corroborate
+🟦 Push: contribute → gate → scan → writeback
+🟦 Corroboration is the currency.
+
+Poison quarantined. Low-rep refused. @base
+api.d0xeddev.com/brain

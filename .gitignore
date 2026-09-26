@@ -28,3 +28,7 @@ mesh.db.bak-*
 
 # LongMemEval oracle + benchmark outputs (large, downloaded)
 data/
+
+# Local backups
+*.bak
+*.bak-*
