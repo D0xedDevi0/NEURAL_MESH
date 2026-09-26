@@ -19,6 +19,21 @@ Contract surface (proof-of-memory escrow, ERC-20 USDC on Base):
     settleSlash(bytes32 claimId, address staker, address challenger, uint256 amountUsdc)
     releaseStake(bytes32 claimId, address staker)
 
+The canonical Solidity implementation is ``PomEscrow`` (source:
+``contracts/PomEscrow.sol`` in this repo; compiled + tested in the
+``d0xeddev-contracts`` Foundry mirror). Its ABI matches these three signatures
+EXACTLY — ``build_escrow_calldata`` below produces calldata this contract will
+accept. Key on-chain semantics (all enforced by the contract, tested green):
+
+  * ``escrowStake`` is ``msg.sender == staker`` only — you stake your own funds;
+    an active bond may be topped up by its original staker, never hijacked by a
+    second party re-staking the same claimId (``StakerMismatch``).
+  * ``settleSlash`` and ``releaseStake`` are owner-only (the settlement relay).
+    A staker CANNOT self-release while live — otherwise slashing is toothless.
+  * Partial slashes are supported; the remainder stays locked until released.
+  * Checks-effects-interactions + ReentrancyGuard; USDC is 6-dec raw units
+    (1 USDC == 1e6), matching the micro-USDC integer accounting in ``bonds.py``.
+
 The settlement trigger is ALWAYS the deterministic mesh verdict from
 ``bonds.settlement_verdict`` — the contract only moves money for a verdict the
 mesh has already produced. No central oracle, no vote judge, no keeper trust.
