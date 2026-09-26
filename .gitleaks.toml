@@ -1,0 +1,32 @@
+# gitleaks config — templates + allowlists for D0xedDev repos.
+# Installed by security-kit/scripts/install-into-repo.sh.
+#
+# extends: default ruleset is implicit (gitleaks falls back to its built-in rules).
+# Allowlists below exist because these paths legitimately contain key-shaped strings.
+
+[allowlist]
+description = "Known-benign key-shaped strings: public benchmark datasets and test fixtures"
+
+# Public datasets that embed third-party tokens (e.g. LoCoMo ships JWT-shaped strings
+# inside dialogue records). Not our credentials, not usable — allowlisted by path.
+paths = [
+  '''locomo10\.json$''',
+  '''locomo_?[0-9]*\.json$''',
+  '''(^|/)tests?/fixtures?/''',
+  '''\.aikido/''',
+]
+
+# Obvious placeholders / test keys. Deliberately narrow: only matches literals that
+# self-identify as examples, so real tokens still fail the scan.
+regexes = [
+  '''(?i)(test|fake|dummy|example|placeholder|sample)[_-]?(key|token|secret)\s*=\s*["'][^"']{4,}["']''',
+  '''AKIAIOSFODNN7EXAMPLE''',
+  '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+]
+
+stopwords = [
+  "example",
+  "placeholder",
+  "redacted",
+  "ROTATED",
+]

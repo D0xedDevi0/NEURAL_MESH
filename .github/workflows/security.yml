@@ -1,0 +1,65 @@
+name: security
+
+# Accountless security gate: secret scan + SAST with Aikido's open-source opengrep rules.
+# No Aikido account, token or third-party action is required — binaries are pinned and
+# checksum-verified. Extracted from https://github.com/AikidoSec (see security/README.md).
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  secrets:
+    name: secret scan (gitleaks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks (checksum verified)
+        run: |
+          set -euo pipefail
+          V=8.30.1
+          curl -fsSL -o /tmp/gl.tgz "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz"
+          curl -fsSL -o /tmp/gl.sums "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_checksums.txt"
+          grep linux_x64 /tmp/gl.sums | sed "s#gitleaks_${V}_linux_x64.tar.gz#/tmp/gl.tgz#" | sha256sum -c -
+          tar -xzf /tmp/gl.tgz -C /tmp gitleaks
+          sudo install -m755 /tmp/gitleaks /usr/local/bin/gitleaks
+          gitleaks version
+      - name: gitleaks detect
+        run: gitleaks detect --no-banner --redact --exit-code 1
+
+  sast:
+    name: SAST (opengrep + Aikido rules)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install opengrep
+        run: |
+          set -euo pipefail
+          V=1.30.0
+          curl -fsSL -o /tmp/opengrep "https://github.com/opengrep/opengrep/releases/download/v${V}/opengrep_manylinux_x86"
+          sudo install -m755 /tmp/opengrep /usr/local/bin/opengrep
+          opengrep --version
+      - name: opengrep scan (Aikido opengrep-rules, MIT)
+        run: |
+          set -euo pipefail
+          opengrep scan --config security/opengrep-rules --quiet --no-git-ignore \
+            --exclude node_modules --exclude .next --exclude dist --exclude build \
+            --exclude lib --exclude vendor \
+            --sarif --output opengrep.sarif . || true
+          opengrep scan --config security/opengrep-rules --quiet --no-git-ignore \
+            --exclude node_modules --exclude .next --exclude dist --exclude build \
+            --exclude lib --exclude vendor .
+      - name: Upload SARIF
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: opengrep-sarif
+          path: opengrep.sarif
+          if-no-files-found: ignore

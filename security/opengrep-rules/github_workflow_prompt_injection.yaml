@@ -1,0 +1,30 @@
+rules:
+  - id: github_workflow_prompt_injection
+    languages:
+      - yaml
+    message: "When concatenating user input inside a prompt within a GitHub Action, the inference output should be considered untrusted."
+    severity: "WARNING"
+    author: "Aikido's Internal Security Research Team (https://github.com/AikidoSec/opengrep-rules)"
+    license: MIT License (https://github.com/AikidoSec/opengrep-rules/blob/main/LICENSE)
+    paths:
+      include:
+        - .github/workflows/*.yaml
+        - .github/workflows/*.yml
+    patterns:
+      - pattern-either:
+        - patterns:
+          - pattern: "prompt: $ANY"
+          - metavariable-pattern:
+              metavariable: $ANY
+              pattern-regex: \${{\s*(?:github\.[^}]*\.(?:body|default_branch|email|head_ref|label|message|name|page_name|ref|title)|steps\.[A-Za-z0-9_-]+\.outputs(?:\.[A-Za-z0-9_-]+)+)\s*}}
+        # Pattern for Claude Code Actions. For Claude Code, user input doesn't necessarily have to be concatenated inside the prompt attribute. Exploitation depends on whether the allowed tools are able to retrieve user input.
+        - patterns:
+          - pattern-inside: | # Comment this out, in case you also want to consider potential risks from insiders/trusted users.
+              with:
+                ...
+                allowed_non_write_users: "*" 
+          - pattern: "claude_args: $ANY"
+          - metavariable-pattern:
+              metavariable: $ANY
+              pattern-regex: .*--(allowedTools|allowed-tools)
+      - focus-metavariable: $ANY

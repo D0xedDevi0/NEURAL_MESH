@@ -1,0 +1,19 @@
+rules:
+  - id: npm_staged_publishing_missing
+    languages:
+      - yaml
+    message: |
+      It is recommended to use staged publishing in NPM, as this adds an approval step before packages go live on the registry. 
+    severity: "WARNING"
+    paths:
+      include:
+        # Folder of Actions which are invoked directly
+        - .github/workflows/**/*.yaml
+        - .github/workflows/**/*.yml
+        # Folder for local/reusable Actions, to be used in workflows
+        - .github/actions/**/*.yml
+        - .github/actions/**/*.yaml 
+    patterns:
+      - pattern-either:
+          - pattern: npm publish
+          - pattern: yarn npm publish
