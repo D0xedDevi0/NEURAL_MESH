@@ -87,6 +87,56 @@ def bond_trust_adjustment(bond_stats: dict) -> dict:
     }
 
 
+def _hit_owners(hit: dict) -> list[str]:
+    """Distinct owners asserting a merged federation hit's content.
+
+    Owner identity = the SOURCE (peer url / ``__local__``) we actually
+    connected to — Sybil-resistant, since a self-claimed `agent_id` is
+    spoofable. Fall back to the fused `agent_id` "a+b" tokens only when no
+    source is recorded.
+    """
+    sources = list(hit.get("sources", []) or [])
+    owners = [str(s) for s in sources if s]
+    if not owners:
+        aid = str(hit.get("agent_id", "") or "")
+        owners = [a for a in aid.split("+") if a]
+    return owners or ["anonymous"]
+
+
+def federation_consensus(hits: list[dict], *, quorum: float = 0.60) -> dict:
+    """Sybil-hardened consensus over merged federation hits.
+
+    Each `hits` entry is a merged/corroborated fact dict from
+    ``FederatedRecall._merge_hits`` — `content`, fused `agent_id` ("a+b"),
+    `trust`, `conflict_group`, `sources`. Contradictory claims share a
+    `conflict_group`; this flattens fused ids + sources into per-owner votes
+    and runs L13 `_resolve_votes` per group, so a division of independent
+    owners surfaces a honest DEADLOCK instead of silently trusting the
+    highest-trust single claim.
+
+    Returns ``{conflict_group: resolution}`` where each resolution carries
+    status (UNANIMOUS/CONVERGED/MAJORITY/DEADLOCK), `converged` content
+    (None on DEADLOCK), `votes`, and `dissent`.
+    """
+    from .consensus import _resolve_votes
+
+    grouped: dict[str, list[dict]] = {}
+    for h in hits:
+        cg = h.get("conflict_group") or "__uncorrelated__"
+        grouped.setdefault(cg, []).append(h)
+
+    verdicts: dict[str, dict] = {}
+    for cg, members in grouped.items():
+        votes: list[dict] = []
+        for h in members:
+            conf = min(1.0, max(0.0, float(h.get("trust", 0.0))))
+            for owner in _hit_owners(h):
+                votes.append({"owner": owner, "claim": h.get("content", ""),
+                              "confidence": conf, "conf_reason": ""})
+        verdicts[cg] = _resolve_votes(votes, cg, quorum)
+    return verdicts
+
+
 @dataclass
 class PeerGate:
     """Outcome of the reputation gate for one peer."""
@@ -382,15 +432,21 @@ class FederatedRecall:
             ranked = merged
 
         if writeback:
+            from .meta import content_hash
             for h in merged:
+                content = h["content"]
+                owners = _hit_owners(h)
+                origin = owners[0] if owners else "federated"
                 self._mesh.add(
-                    h["content"],
+                    content,
                     provenance=h.get("provenance") or "federated",
                     agent_id=h.get("agent_id", ""),
                     trust=min(1.0, h.get("trust", 0.5)),
                     conflict_group=h.get("conflict_group", ""),
                     meta={"federated_sources": h.get("sources", []),
-                          "corroborated": h.get("__corroborated", False)},
+                          "corroborated": h.get("__corroborated", False),
+                          "content_hash": content_hash(content),
+                          "origin": origin},
                 )
 
         total_cents = sum(p.get("price_cents", 0) for p in payments)
@@ -409,9 +465,11 @@ class FederatedRecall:
             "unique_hits": len(merged),
             "corroborated": corroborated,
             "consensus": ranked,
+            "consensus_verdict": (federation_consensus(merged)
+                                  if consensus else {}),
             "gates": {url: vars(g) for url, g in gates.items()},
         }
 
 
 __all__ = ["FederatedRecall", "PeerGate", "_content_hash",
-           "bond_trust_adjustment"]
+           "bond_trust_adjustment", "federation_consensus", "_hit_owners"]

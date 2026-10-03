@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `BasedNUKEM/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-10-03 · Current shipped: **v0.37.0**
+> Last updated: 2026-10-03 · Current shipped: **v0.38.0**
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
 purpose: every stage starts from the *outcome* we want to prove, then lists the
@@ -660,6 +660,49 @@ hard claims keep their trust. A default-high-trust node cannot bluff its way int
 tampered artifact is refused, a buyer flips UNKNOWN→COVERED after one verified import).
 🟦 Version bumped v0.37.0 in all spots; deployed; `/health` verified.
 🟦 Sibyl repo marked "spine prototype" (retired as a second production brain).
+
+---
+
+## Goal 14 — v0.38.0: "Converged federation" — Sybil-hardened civic memory 🟦 (this upgrade)
+
+v0.37 ported the spine primitives (L10/L12/L13/L14). v0.38 composes them into
+the federation economy so cross-agent consensus is Sybil-hardened end-to-end.
+The v0.30 `FederatedRecall` loop resolved conflicts with a naive trust-sort —
+"highest single trust wins" — which a lying high-confidence peer could game.
+
+### What changed
+🟦 **`_resolve_votes`** (extracted in `consensus.py`) — the pure L13 decision core
+(claim-fingerprint grouping → distinct-owner → quorum → majority → DEADLOCK),
+now shared by `reach_consensus` (MemoryNode beliefs) *and* the federation.
+🟦 **`federation_consensus`** (`federation.py`) — flattens merged federation hits
+into per-owner votes keyed on the **source URL** (the transport identity we
+actually connected to, un-spoofable by a self-claimed `agent_id`), groups
+contradictory claims by `conflict_group`, and runs `_resolve_votes`. A lone
+high-confidence clone collapses to ONE owner and cannot outvote two independent
+peers — the topic goes CONTESTED (DEADLOCK) instead of guessing.
+🟦 **`consensus_verdict`** on `federated_recall` — every recall now returns a
+per-conflict-group verdict (UNANIMOUS/CONVERGED/MAJORITY/DEADLOCK + winner).
+🟦 **Tamper-evident writeback** — `writeback=True` stamps every written-back fact
+with the L10 canonical `content_hash` + its `origin` source, so a federated
+memory is independently verifiable, not just trusted.
+
+### Design decisions (load-bearing)
+🟦 Owner identity = **source URL**, not self-claimed `agent_id`. `agent_id` is
+spoofable (one entity labels itself "a+b+c"); the url we dialed is not. Clones
+still collapse to one owner either way — the url just can't be forged without
+spinning up a real second endpoint.
+🟦 The Sybil edge case is honest: an attacker whose *single* claim clears quorum
+confidence loses to two independent owners who corroborate *below* quorum, because
+2 distinct owners > 1 and the federation refuses to crown a divided topic.
+
+### Acceptance criteria
+🟦 9 new tests in `tests/test_converged_federation.py` GREEN (owner flattening,
+UNANIMOUS, CONVERGED, DEADLOCK, Sybil collapse, `consensus_verdict` emission,
+tamper-evident writeback).
+🟦 Full suite 352 passed, 12 skipped (no regressions).
+🟦 Demo `demos/converged_federation.py` — DEADLOCK vs a lone clone, CONVERGED at
+quorum, and a writeback whose `content_hash` verifies.
+🟦 Version bumped v0.38.0 in all spots; deployed; `/health` verified.
 
 ---
 

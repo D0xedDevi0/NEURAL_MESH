@@ -86,34 +86,16 @@ def _owner_of(node: MemoryNode) -> str:
     return node.agent_id or node.by or node.provenance or "anonymous"
 
 
-def reach_consensus(beliefs: list, topic: "str | None" = None, *,
-                    quorum: float = QUORUM,
-                    consensus_mesh=None) -> dict:
-    """Reconcile independent agents' beliefs on `topic`.
+def _resolve_votes(votes: list, topic: "str | None", quorum: float) -> dict:
+    """Pure vote resolution — the deterministic decision core, shared by
+    `reach_consensus` (MemoryNode beliefs) and `federation_consensus`
+    (federation hit dicts).
 
-    Args:
-        beliefs: list of MemoryNode, one per agent's belief on the topic (each
-                 should carry `agent_id`/`by` as its owner identity).
-        topic: the disputed topic name (for reporting/persistence).
-        quorum: L10 confidence a claim needs to win outright.
-        consensus_mesh: optional Mesh where the reconciled belief is written as
-                 a decision-grade node (+ provenance). On DEADLOCK a CONTESTED
-                 node is written instead. None -> verdict only.
-
-    Returns a dict with status UNANIMOUS/CONVERGED/MAJORITY/DEADLOCK, the
-    winning claim (None on DEADLOCK), per-agent votes, and dissent.
+    `votes` is a list of ``{owner, claim, confidence, conf_reason}`` where each
+    entry is ONE distinct owner's contribution. Groups by canonical claim
+    fingerprint, applies distinct-owner + quorum + majority + deadlock, and
+    returns the resolution dict (no persistence — callers handle that).
     """
-    votes: list[dict] = []
-    for node in beliefs:
-        if node is None or node.superseded_by:
-            continue
-        claim = _claim_of(node)
-        if claim is None:
-            continue
-        conf = node_confidence(node)
-        votes.append({"owner": _owner_of(node), "claim": claim,
-                      "confidence": conf["confidence"],
-                      "conf_reason": conf["reason"]})
     if not votes:
         return {"status": "DEADLOCK", "topic": topic, "votes": [],
                 "reason": "no agent holds a belief on this topic",
@@ -156,36 +138,73 @@ def reach_consensus(beliefs: list, topic: "str | None" = None, *,
                if winner is not None
                and content_hash(v["claim"]) != content_hash(winner["claim"])]
 
-    result = {
+    return {
         "status": status, "topic": topic, "votes": votes, "dissent": dissent,
         "reason": reason,
         "converged": winner["claim"] if winner is not None else None,
         "converged_confidence": round(winner["max_conf"], 3) if winner else None,
     }
 
+
+def reach_consensus(beliefs: list, topic: "str | None" = None, *,
+                    quorum: float = QUORUM,
+                    consensus_mesh=None) -> dict:
+    """Reconcile independent agents' beliefs on `topic`.
+
+    Args:
+        beliefs: list of MemoryNode, one per agent's belief on the topic (each
+                 should carry `agent_id`/`by` as its owner identity).
+        topic: the disputed topic name (for reporting/persistence).
+        quorum: L10 confidence a claim needs to win outright.
+        consensus_mesh: optional Mesh where the reconciled belief is written as
+                 a decision-grade node (+ provenance). On DEADLOCK a CONTESTED
+                 node is written instead. None -> verdict only.
+
+    Returns a dict with status UNANIMOUS/CONVERGED/MAJORITY/DEADLOCK, the
+    winning claim (None on DEADLOCK), per-agent votes, and dissent.
+    """
+    votes: list[dict] = []
+    for node in beliefs:
+        if node is None or node.superseded_by:
+            continue
+        claim = _claim_of(node)
+        if claim is None:
+            continue
+        conf = node_confidence(node)
+        votes.append({"owner": _owner_of(node), "claim": claim,
+                      "confidence": conf["confidence"],
+                      "conf_reason": conf["reason"]})
+
+    result = _resolve_votes(votes, topic, quorum)
+
     if consensus_mesh is not None:
-        if winner is not None:
+        converged = result["converged"]
+        if converged is not None:
+            winners = [v for v in result["votes"]
+                       if content_hash(v["claim"]) == content_hash(converged)]
             node = consensus_mesh.add(
-                content=json.dumps(winner["claim"], sort_keys=True),
+                content=json.dumps(converged, sort_keys=True),
                 type=MemoryType.SEMANTIC,
                 meta={"consensus": {
-                    "topic": topic, "status": status, "reason": reason,
-                    "owners": [v["owner"] for v in winner["votes"]],
-                    "dissenting": [v["owner"] for v in dissent],
+                    "topic": topic, "status": result["status"],
+                    "reason": result["reason"],
+                    "owners": [v["owner"] for v in winners],
+                    "dissenting": [v["owner"] for v in result["dissent"]],
                 }},
             )
             record_provenance(
                 consensus_mesh, node.id, source="fleet-consensus",
-                evidence=len(winner["votes"]), falsifiable=True,
-                hard=(status in ("UNANIMOUS", "CONVERGED")),
+                evidence=len(winners), falsifiable=True,
+                hard=(result["status"] in ("UNANIMOUS", "CONVERGED")),
             )
         else:
             consensus_mesh.add(
                 content=json.dumps({"topic": topic, "status": "CONTESTED"}),
                 type=MemoryType.SEMANTIC,
                 meta={"consensus": {
-                    "topic": topic, "status": "CONTESTED", "reason": reason,
-                    "owners": [v["owner"] for v in votes],
+                    "topic": topic, "status": "CONTESTED",
+                    "reason": result["reason"],
+                    "owners": [v["owner"] for v in result["votes"]],
                 }},
             )
     return result
