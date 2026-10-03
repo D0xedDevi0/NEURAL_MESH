@@ -580,6 +580,45 @@ fail-open/closed policy.
 
 ---
 
+## Goal 12 — v0.36.0: "Reconciliation, load-bearing" — the veto that gates real money 🟦 (this upgrade)
+
+v0.35 gave the mesh bi-temporal recall and reality reconciliation, but
+`ReconcileGate` only *reported* disagreement — it never stood between the mesh
+and a real action. v0.36 makes reconciliation LOAD-BEARING: an `ExecutionGuard`
+sits in front of every swap/payment/write and VETOES it the instant a claim the
+mesh is about to act on contradicts the chain, *before anything broadcasts*.
+
+### Theme A — the guard (`neural_mesh/actguard.py`)
+🟦 `ExecutionGuard.authorize(action, claims)` → `ExecutionVerdict`;
+`bool(verdict)` is the allow signal, False iff any claim MISMATCHes.
+🟦 `authorize_swap(...)` derives the canonical safety claims for a trade —
+wallet holds enough to sell (`erc20_balance`), retains gas reserve
+(`eth_balance`), pool/token/executor are deployed contracts (`contract_code`).
+🟦 Attaching a `BondLedger` (v0.34) has every mismatched *bonded* claim emit a
+`slash_flag` — memory that pays when it's wrong.
+🟦 The guard only ever refuses; it never signs, submits, or broadcasts.
+🟦 `Mesh.authorize()` / `Mesh.authorize_swap()` + `/mesh/authorize` HTTP route.
+
+### Theme B — two correctness bugs load-bearing surfaced
+🟦 `_call_erc20` used `sha256` for the selector; ERC-20 selectors are KECCAK-256.
+Reused shared `_keccak256`, so `erc20_balance`/`erc20_supply` now read real
+on-chain values (previously 0/garbage on mainnet).
+🟦 `_hex_to_int("0x")` now returns 0 not raise, so `contract_code` on an EOA
+correctly reads 0 → MISMATCH instead of crashing → UNVERIFIABLE.
+
+### Theme C — live wiring: the MESH Terminal
+🟦 `scripts/mesh-position-manager.py` guards every swap before broadcast; on
+mismatch prints `GUARD VETO` and skips `swap_cl` (dry and live), fail-closed,
+`--no-guard` to disable.
+
+### Acceptance criteria
+🟦 New guard + regression + server-route tests GREEN; full suite 300 passed.
+🟦 Load-bearing property pinned live against Base mainnet: manager vetoed a
+stop-loss exit because the wallet held 0.000264 ETH below the 0.0008 reserve.
+🟦 Version bumped v0.36.0 in all spots; deployed; `/health` verified.
+
+---
+
 ## Cross-cutting contracts (apply to EVERY stage)
 
 ### Honest benchmark contract (non-negotiable)

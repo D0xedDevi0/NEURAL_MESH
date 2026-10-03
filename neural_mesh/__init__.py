@@ -50,6 +50,7 @@ from .reconcile import (
     ReconcileGate, ReconcileReport, Verdict, VerdictCode,
     MATCH, MISMATCH, UNVERIFIABLE,
 )
+from .actguard import ExecutionGuard, ExecutionVerdict
 # Lazy imports for optional heavy deps — only loaded when actually used,
 # so `pip install neural-mesh` works without eth-account / yantrikdb.
 _LAZY = {}
@@ -93,5 +94,6 @@ __all__ = ["Mesh", "MemoryType", "export_mesh", "import_mesh",
            "BondEscrow", "build_escrow_calldata", "escrow_status",
            "valid_at", "snapshot", "recall_asof", "history", "resolve_at",
            "ReconcileGate", "ReconcileReport", "Verdict", "VerdictCode",
-           "MATCH", "MISMATCH", "UNVERIFIABLE"]
-__version__ = "0.35.0"
+           "MATCH", "MISMATCH", "UNVERIFIABLE",
+           "ExecutionGuard", "ExecutionVerdict"]
+__version__ = "0.36.0"

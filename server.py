@@ -101,7 +101,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.35.0",
+        "version": "0.36.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
     })
 
@@ -374,6 +374,31 @@ def reconcile_route():
     return jsonify({
         "allow": report.allow,
         "vetoes": report.vetoes,
+        "verdicts": verdicts,
+    })
+
+
+@app.route("/mesh/authorize", methods=["POST"])
+def authorize_route():
+    """Body: {action: {...}, claims: [...], fail_open?} — load-bearing veto.
+
+    v0.36.0: return an ExecutionVerdict for a candidate action. ``allow`` is
+    False iff any claim MISMATCHes; ``bool`` semantics are the caller's gate.
+    """
+    data = request.get_json()
+    action = data.get("action", {})
+    claims = data.get("claims", [])
+    verdict = mesh.authorize(action, claims,
+                             fail_open=data.get("fail_open", True))
+    verdicts = [
+        {"code": v.code, "actual": v.actual, "expected": v.expected,
+         "detail": v.detail, "fact": v.claim.get("fact", "")}
+        for v in verdict.verdicts
+    ]
+    return jsonify({
+        "allow": verdict.allow,
+        "vetoes": verdict.vetoes,
+        "slash_flags": verdict.slash_flags,
         "verdicts": verdicts,
     })
 
@@ -840,7 +865,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.35.0",
+        "version": "0.36.0",
         "provenance_breakdown": provenance_breakdown,
     })
 
@@ -907,7 +932,7 @@ def erc8004_manifest():
             "cross-source-corroboration",
             "proof-of-memory",
         ],
-        "version": "0.35.0",
+        "version": "0.36.0",
     })
 
 

@@ -103,6 +103,8 @@ def _rpc(method: str, params: list, rpc_url: str = DEFAULT_RPC):
 
 
 def _hex_to_int(hexstr) -> int:
+    if not hexstr or hexstr in ("0x", "0x0"):
+        return 0
     return int(hexstr, 16)
 
 
@@ -152,8 +154,11 @@ class ReconcileGate:
         raise ValueError(f"unknown subject: {subject}")
 
     def _call_erc20(self, token: str, sig: str, args: list, data_addr: str):
-        import hashlib
-        selector = hashlib.sha256(sig.encode()).hexdigest()[:8]
+        # ERC-20 function selectors are KECCAK-256, not sha256 (v0.36.0 fix:
+        # sha256 produced a wrong selector so every erc20_balance/supply claim
+        # silently read 0/garbage on the real chain). Reuse the shared keccak.
+        from .x402_recall import _keccak256
+        selector = _keccak256(sig.encode()).hex()[:8]
         call = "0x" + selector
         if args:
             call += args[0][2:].lower().rjust(64, "0")

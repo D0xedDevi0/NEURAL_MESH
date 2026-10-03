@@ -586,6 +586,35 @@ class Mesh:
         return ReconcileGate(self, fetcher=fetcher,
                              fail_open=fail_open).reconcile(claims)
 
+    def authorize(self, action: dict, claims: list, fetcher=None,
+                  fail_open: bool = True, bond_ledger=None):
+        """Load-bearing action boundary: veto a real action on any mismatch.
+
+        v0.36.0: reconciliation graduates from \"report what differs\" to
+        \"refuse the action\". ``authorize`` verdids ``claims`` against on-chain
+        reality and returns an ``ExecutionVerdict``; ``bool(verdict)`` is the
+        allow signal, False iff any claim MISMATCHes (a VETO). Attaching a
+        ``bond_ledger`` has every mismatched *bonded* claim emit a slash flag.
+        The guard only ever refuses — it never signs, submits, or broadcasts.
+        """
+        from .actguard import ExecutionGuard
+        guard = ExecutionGuard(self, fetcher=fetcher, fail_open=fail_open,
+                               bond_ledger=bond_ledger)
+        return guard.authorize(action, claims)
+
+    def authorize_swap(self, token_in: str, token_out: str, pool: str,
+                       size_wei: int, wallet: str, gas_reserve_wei: int = 0,
+                       fetcher=None, fail_open: bool = True,
+                       extra_claims: "list | None" = None):
+        """Authorize a swap via its canonical safety claims (see actguard)."""
+        from .actguard import ExecutionGuard
+        guard = ExecutionGuard(self, fetcher=fetcher, fail_open=fail_open)
+        return guard.authorize_swap(
+            token_in=token_in, token_out=token_out, pool=pool,
+            size_wei=size_wei, wallet=wallet, gas_reserve_wei=gas_reserve_wei,
+            extra_claims=extra_claims,
+        )
+
     # ---------- SLEEP: replay -> strengthen -> prune ----------
     def fused_recall(self, query: str, top_k: int = 5, alpha: float = 0.6,
                      writeback: bool = False,

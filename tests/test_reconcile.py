@@ -68,3 +68,21 @@ def test_multiple_claims_any_mismatch_vetoes():
     assert not r.allow
     # exactly one veto (the mismatching second claim)
     assert len(r.vetoes) == 1
+
+
+def test_keccak_selector_is_erc20_canonical():
+    """Regression: erc20 selectors must be keccak256, never sha256 (v0.36.0)."""
+    from neural_mesh.x402_recall import _keccak256
+    # balanceOf(address) == 0x70a08231; totalSupply() == 0x18160ddd
+    assert _keccak256(b"balanceOf(address)").hex()[:8] == "70a08231"
+    assert _keccak256(b"totalSupply()").hex()[:8] == "18160ddd"
+
+
+def test_hex_to_int_empty_is_zero():
+    """Regression: empty/0x code (EOA) must read 0, not raise (v0.36.0)."""
+    from neural_mesh.reconcile import _hex_to_int
+    assert _hex_to_int("0x") == 0
+    assert _hex_to_int("0x0") == 0
+    assert _hex_to_int("") == 0
+    assert _hex_to_int("0x1") == 1
+    assert _hex_to_int("0x10") == 16
