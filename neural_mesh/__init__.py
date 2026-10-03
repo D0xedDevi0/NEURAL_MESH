@@ -51,6 +51,12 @@ from .reconcile import (
     MATCH, MISMATCH, UNVERIFIABLE,
 )
 from .actguard import ExecutionGuard, ExecutionVerdict
+from .meta import (content_hash, record_provenance, confidence, node_confidence,
+                   census, coverage, known_unknowns)
+from .consensus import agent_believe, reach_consensus
+from .exchange import (export_artifact, verify_artifact, import_artifact,
+                       serialize, deserialize)
+from .curriculum import learn_plan, record_attempt, gaps_remaining
 # Lazy imports for optional heavy deps — only loaded when actually used,
 # so `pip install neural-mesh` works without eth-account / yantrikdb.
 _LAZY = {}
@@ -95,5 +101,11 @@ __all__ = ["Mesh", "MemoryType", "export_mesh", "import_mesh",
            "valid_at", "snapshot", "recall_asof", "history", "resolve_at",
            "ReconcileGate", "ReconcileReport", "Verdict", "VerdictCode",
            "MATCH", "MISMATCH", "UNVERIFIABLE",
-           "ExecutionGuard", "ExecutionVerdict"]
-__version__ = "0.36.0"
+           "ExecutionGuard", "ExecutionVerdict",
+           "content_hash", "record_provenance", "confidence", "node_confidence",
+           "census", "coverage", "known_unknowns",
+           "agent_believe", "reach_consensus",
+           "export_artifact", "verify_artifact", "import_artifact",
+           "serialize", "deserialize",
+           "learn_plan", "record_attempt", "gaps_remaining"]
+__version__ = "0.37.0"

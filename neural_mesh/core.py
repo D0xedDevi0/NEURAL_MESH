@@ -615,6 +615,33 @@ class Mesh:
             extra_claims=extra_claims,
         )
 
+    # ---------- META (know what you know and don't — L10) ----------
+    def known_unknowns(self, query: str, *, limit: int = 10,
+                       min_similarity: float = 0.01) -> dict:
+        """Anti-hallucination read: COVERED / THIN / UNKNOWN for a query.
+
+        L10 (ported from the dejavu spine). Returns an explicit epistemic
+        verdict so a decision-maker knows whether it is safe to act on recall
+        or must learn first — absence is a signal, never silence."""
+        from .meta import known_unknowns as _known_unknowns
+        return _known_unknowns(self, query, limit=limit,
+                               min_similarity=min_similarity)
+
+    def confidence(self, node_id: str) -> dict:
+        """Reliability 0..1 for one node, with a human reason (L10)."""
+        from .meta import confidence as _confidence
+        return _confidence(self, node_id)
+
+    def coverage(self) -> dict:
+        """Per-type maturity and blind spots (L10)."""
+        from .meta import coverage as _coverage
+        return _coverage(self)
+
+    def census(self) -> dict:
+        """Store census across lanes/types (L10)."""
+        from .meta import census as _census
+        return _census(self)
+
     # ---------- SLEEP: replay -> strengthen -> prune ----------
     def fused_recall(self, query: str, top_k: int = 5, alpha: float = 0.6,
                      writeback: bool = False,

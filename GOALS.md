@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `BasedNUKEM/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-08-14 · Current shipped: **v0.29.0**
+> Last updated: 2026-10-03 · Current shipped: **v0.37.0**
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
 purpose: every stage starts from the *outcome* we want to prove, then lists the
@@ -616,6 +616,50 @@ mismatch prints `GUARD VETO` and skips `swap_cl` (dry and live), fail-closed,
 🟦 Load-bearing property pinned live against Base mainnet: manager vetoed a
 stop-loss exit because the wallet held 0.000264 ETH below the 0.0008 reserve.
 🟦 Version bumped v0.36.0 in all spots; deployed; `/health` verified.
+
+---
+
+## Goal 13 — v0.37.0: "Converged spine" — the Sibyl dejavu port 🟦 (this upgrade)
+
+One repo, one brain. The Sibyl/dejavu hackathon spine (16 layers) overlapped
+NEURAL_MESH's reconcile/bonds/sharing, but its four strongest layers were
+strictly better. v0.37 ports those four into `neural_mesh/` as pure-stdlib,
+deterministic primitives composed from the existing node model, then retires
+Sibyl as a "spine prototype" — no second production brain.
+
+### Ported layers
+🟦 **L10 Meta** (`neural_mesh/meta.py`) — `known_unknowns` (COVERED/THIN/UNKNOWN),
+`confidence`/`node_confidence`, `coverage` (blind spots), `census`,
+`content_hash`, `record_provenance`; plus `Mesh.known_unknowns/confidence/
+coverage/census`. The mesh now reports what it *doesn't* know, not just what
+it recalls.
+🟦 **L13 Consensus** (`neural_mesh/consensus.py`) — `agent_believe` +
+`reach_consensus` (UNANIMOUS/CONVERGED/MAJORITY/DEADLOCK) with a confidence
+quorum and **Sybil hardening**: distinct-owner vote weighting so one entity's
+N clones can't manufacture a winner; `DEADLOCK` refuses to fabricate certainty.
+🟦 **L12 Exchange** (`neural_mesh/exchange.py`) — `export_artifact` /
+`verify_artifact` / `import_artifact`: a tamper-evident single-node artifact
+(content-hash over body+provenance+identity), reusing the existing
+`ContentValidator` to refuse weaponized imports before any write.
+🟦 **L14 Curriculum** (`neural_mesh/curriculum.py`) — `learn_plan` /
+`record_attempt` / `gaps_remaining`: self-scheduled learning of known gaps,
+priority = coverage-gap × importance with a scar-adjacent boost.
+
+### Design decision (load-bearing)
+NEURAL_MESH seeds `trust=1.0`, so a fresh unverified node and a hard-provenanced
+node were numerically identical — which would have gutted L13's quorum.
+`node_confidence` is therefore **provenance-aware**: unverified claims are capped
+at `UNVERIFIED_CAP=0.45` (below the 0.6 decision quorum); verified/corroborated/
+hard claims keep their trust. A default-high-trust node cannot bluff its way into
+"safe to act" — the faithful dejavu semantic.
+
+### Acceptance criteria
+🟦 42 new tests across 4 files GREEN (L10/L12/L13/L14); full suite 343 passed, 12 skipped.
+🟦 Two demos: `demos/meta_demo.py` (L10 mirror) and `demos/convergence_demo.py`
+(full L13→L12→L10/L14 loop: 3 attacker clones can't outvote 2 hard peers, a
+tampered artifact is refused, a buyer flips UNKNOWN→COVERED after one verified import).
+🟦 Version bumped v0.37.0 in all spots; deployed; `/health` verified.
+🟦 Sibyl repo marked "spine prototype" (retired as a second production brain).
 
 ---
 
