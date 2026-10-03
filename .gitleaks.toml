@@ -28,4 +28,7 @@ regexes = [
   '''(?i)\b(test|fake|dummy|example|placeholder|sample)[_-]?(key|token|secret)\s*[:=]\s*["'][^"']{4,}["']''',
   '''AKIAIOSFODNN7EXAMPLE''',
   '''wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY''',
+  # Anvil/Hardhat default dev key (account #0 -> 0xf39F...). Publicly known,
+  # zero funds on any mainnet, appears in every EVM toolchain's fixtures.
+  '''0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80''',
 ]
