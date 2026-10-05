@@ -390,7 +390,8 @@ class Mesh:
 
     # ---------- retrieval ----------
     def recall(self, query: str, top_k: int = 5, writeback: bool = False,
-               lane: "str | None" = None):
+               lane: "str | None" = None, rel_floor: float = 0.0,
+               min_score=None):
         """Product-default retrieval — dispatches on `self.default_recall`.
 
         Default is `hybrid` (dense+lexical fusion): the LongMemEval retrieval
@@ -399,13 +400,24 @@ class Mesh:
         named recall method. Superseded (stale) nodes are skipped.
 
         `writeback` defaults False (no disk write per query) — set True to
-        track access stats for sleep()/consolidate()."""
+        track access stats for sleep()/consolidate().
+
+        `rel_floor` / `min_score` apply a precision floor to the ranked
+        result set (see `_apply_score_floor`); both default off. Not applied
+        to the resonance path (it ranks by spreading activation, not a
+        comparable similarity score)."""
         if self.default_recall == "hybrid":
-            return self.hybrid_recall(query, top_k=top_k, writeback=writeback, lane=lane)
+            return self.hybrid_recall(query, top_k=top_k, writeback=writeback,
+                                      lane=lane, rel_floor=rel_floor,
+                                      min_score=min_score)
         if self.default_recall == "dense":
-            return self.dense_recall(query, top_k=top_k, writeback=writeback, lane=lane)
+            return self.dense_recall(query, top_k=top_k, writeback=writeback,
+                                     lane=lane, rel_floor=rel_floor,
+                                     min_score=min_score)
         if self.default_recall == "lexical":
-            return self.lexical_recall(query, top_k=top_k, writeback=writeback, lane=lane)
+            return self.lexical_recall(query, top_k=top_k, writeback=writeback,
+                                       lane=lane, rel_floor=rel_floor,
+                                       min_score=min_score)
         # resonance (spreading activation over dense embedder)
         qe = self._embed_query(query)
         nodes = {n.id: n for n in self._live_nodes(lane)}
@@ -460,20 +472,49 @@ class Mesh:
         tooling, never by default recall."""
         return self._live_nodes(lane=QUARANTINE_LANE)
 
+    @staticmethod
+    def _apply_score_floor(scored, rel_floor: float = 0.0, min_score=None):
+        """Trim a descending-sorted ``(score, node)`` list to a precision floor.
+
+        ``rel_floor`` — keep only items within this fraction of the TOP score
+        (e.g. ``0.7`` keeps scores >= ``0.7 * best``); ``0.0`` disables.
+        ``min_score`` — absolute floor; ``None`` disables.
+
+        Both default off, so existing recall behaviour is unchanged. The point
+        is to stop an always-full ``top_k`` result set from padding
+        precision-scored retrieval with noise — the failure mode the Agent
+        Memory Benchmark's PrecisionMemBench exposes (mem0/cognee/zep all
+        return full sets and score 0 active passes there).
+        """
+        if not scored:
+            return scored
+        if rel_floor and rel_floor > 0:
+            cut = scored[0][0] * rel_floor
+            scored = [s for s in scored if s[0] >= cut]
+        if min_score is not None:
+            scored = [s for s in scored if s[0] >= min_score]
+        return scored
+
     def dense_recall(self, query: str, top_k: int = 5, writeback: bool = False,
-                     lane: "str | None" = None):
+                     lane: "str | None" = None, rel_floor: float = 0.0,
+                     min_score=None):
         """Pure cosine over stored (dense) embeddings — no resonance spread.
-        Fair baseline for comparing against lexical/hybrid fusion."""
+        Fair baseline for comparing against lexical/hybrid fusion.
+
+        ``rel_floor`` / ``min_score`` trim the result set to a precision floor
+        (see ``_apply_score_floor``); both default off."""
         qe = self._embed_query(query)
         scored = [(_sim(qe, n.embedding), n) for n in self._live_nodes(lane)]
         scored.sort(key=lambda x: -x[0])
+        scored = self._apply_score_floor(scored, rel_floor, min_score)
         hits = [n for _, n in scored[:top_k]]
         for n in hits:
             self._touch(n, writeback=writeback)
         return hits
 
     def lexical_recall(self, query: str, top_k: int = 5, writeback: bool = False,
-                       lane: "str | None" = None):
+                       lane: "str | None" = None, rel_floor: float = 0.0,
+                       min_score=None):
         """Pure lexical retrieval — exact-keyword matching.
 
         `lexical_backend="bow"` (default): hashed bag-of-words cosine (see
@@ -481,17 +522,21 @@ class Mesh:
         (Rust-accelerated when the extension is present).
         """
         if self.lexical_backend == "bm25":
-            return self.bm25_recall(query, top_k=top_k, writeback=writeback, lane=lane)
+            return self.bm25_recall(query, top_k=top_k, writeback=writeback,
+                                    lane=lane, rel_floor=rel_floor,
+                                    min_score=min_score)
         ql = self._lex_emb(query)
         scored = [(_sim(ql, self._lex_emb(n.content)), n) for n in self._live_nodes(lane)]
         scored.sort(key=lambda x: -x[0])
+        scored = self._apply_score_floor(scored, rel_floor, min_score)
         hits = [n for _, n in scored[:top_k]]
         for n in hits:
             self._touch(n, writeback=writeback)
         return hits
 
     def bm25_recall(self, query: str, top_k: int = 5, writeback: bool = False,
-                    lane: "str | None" = None):
+                    lane: "str | None" = None, rel_floor: float = 0.0,
+                    min_score=None):
         """Okapi BM25 full-text retrieval (Rust-accelerated when available).
 
         Scores every live node's content against `query` by term-frequency ×
@@ -504,8 +549,10 @@ class Mesh:
             return []
         idx = self._bm25_index_for(live)
         scores = idx.scores(query)
-        order = sorted(range(len(live)), key=lambda i: -scores[i])
-        hits = [live[i] for i in order[:top_k]]
+        scored = sorted(((scores[i], live[i]) for i in range(len(live))),
+                        key=lambda x: -x[0])
+        scored = self._apply_score_floor(scored, rel_floor, min_score)
+        hits = [n for _, n in scored[:top_k]]
         for n in hits:
             self._touch(n, writeback=writeback)
         return hits
@@ -526,14 +573,19 @@ class Mesh:
         return idx
 
     def hybrid_recall(self, query: str, top_k: int = 5, alpha: float = 0.5,
-                      writeback: bool = False, lane: "str | None" = None):
+                      writeback: bool = False, lane: "str | None" = None,
+                      rel_floor: float = 0.0, min_score=None):
         """Fuse dense (self.embedder) + lexical (hashed) similarity.
 
         combined = alpha * dense_cosine + (1 - alpha) * lexical_cosine
 
         alpha=1.0 -> dense only; alpha=0.0 -> lexical only. Hybrid is meant to
         dominate either alone on a lexical-overlap grounding proxy while keeping
-        paraphrase coverage from the dense side. Skips superseded nodes."""
+        paraphrase coverage from the dense side. Skips superseded nodes.
+
+        ``rel_floor`` / ``min_score`` trim the result set to a precision floor
+        (see ``_apply_score_floor``); both default off, preserving the historic
+        always-full-top_k behaviour."""
         qe = self._embed_query(query)
         ql = self._lex_emb(query)
         scored = []
@@ -542,6 +594,7 @@ class Mesh:
             lx = _sim(ql, self._lex_emb(n.content))
             scored.append((alpha * d + (1.0 - alpha) * lx, n))
         scored.sort(key=lambda x: -x[0])
+        scored = self._apply_score_floor(scored, rel_floor, min_score)
         hits = [n for _, n in scored[:top_k]]
         for n in hits:
             self._touch(n, writeback=writeback)
