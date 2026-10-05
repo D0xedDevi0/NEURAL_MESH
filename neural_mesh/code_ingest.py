@@ -71,9 +71,14 @@ def _sig(node: ast.AST) -> str:
         return "()"
 
 
-def parse_file(path: Path, root: Path) -> list[Symbol]:
-    """Parse one Python file into module + class + function/method symbols."""
+def parse_file(path: Path, root: Path, ns: str = "") -> list[Symbol]:
+    """Parse one Python file into module + class + function/method symbols.
+
+    `ns` optionally namespaces the node ids + stored path so several repos can
+    share one mesh without id collisions (e.g. ns='NEURAL_MESH').
+    """
     rel = _rel(path, root)
+    key = f"{ns}/{rel}" if ns else rel
     src = path.read_text(encoding="utf-8", errors="replace")
     try:
         tree = ast.parse(src)
@@ -85,7 +90,7 @@ def parse_file(path: Path, root: Path) -> list[Symbol]:
                  for n in ast.walk(tree))
 
     syms: list[Symbol] = []
-    mod_id = f"code:module:{rel}"
+    mod_id = f"code:module:{key}"
     mod_calls: list[str] = []
     mod_imports: list[str] = []
     n_classes = n_funcs = 0
@@ -107,8 +112,8 @@ def parse_file(path: Path, root: Path) -> list[Symbol]:
             n_funcs += 1
 
     syms.append(Symbol(
-        id=mod_id, kind="module", qualname=mod, path=rel, lineno=1,
-        content=(f"module {mod} ({rel}) — {n_lines} lines; "
+        id=mod_id, kind="module", qualname=mod, path=key, lineno=1,
+        content=(f"module {mod} ({key}) — {n_lines} lines; "
                  f"{n_classes} classes, {n_funcs} functions"),
         doc=(ast.get_docstring(tree) or "").split("\n")[0][:200],
         imports=mod_imports,
@@ -118,14 +123,14 @@ def parse_file(path: Path, root: Path) -> list[Symbol]:
         for n in body:
             if isinstance(n, ast.ClassDef):
                 cq = f"{owner_qual}.{n.name}" if owner_qual else n.name
-                cid = f"code:sym:{rel}:{cq}"
+                cid = f"code:sym:{key}:{cq}"
                 doc = (ast.get_docstring(n) or "").split("\n")[0][:200]
                 bases = [b.id if isinstance(b, ast.Name) else
                          (b.attr if isinstance(b, ast.Attribute) else "")
                          for b in n.bases]
                 syms.append(Symbol(
-                    id=cid, kind="class", qualname=cq, path=rel, lineno=n.lineno,
-                    content=f"class {cq} in {rel}:{n.lineno}"
+                    id=cid, kind="class", qualname=cq, path=key, lineno=n.lineno,
+                    content=f"class {cq} in {key}:{n.lineno}"
                             + (f"({', '.join(b for b in bases if b)})" if any(bases) else "")
                             + (f" — {doc}" if doc else ""),
                     doc=doc, parent=owner_id, bases=[b for b in bases if b],
@@ -134,7 +139,7 @@ def parse_file(path: Path, root: Path) -> list[Symbol]:
             elif isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 kind = "method" if in_class else "function"
                 fq = f"{owner_qual}.{n.name}" if owner_qual else n.name
-                fid = f"code:sym:{rel}:{fq}"
+                fid = f"code:sym:{key}:{fq}"
                 doc = (ast.get_docstring(n) or "").split("\n")[0][:200]
                 calls = [
                     (c.func.id if isinstance(c.func, ast.Name)
@@ -144,8 +149,8 @@ def parse_file(path: Path, root: Path) -> list[Symbol]:
                 calls = [c for c in calls if c and c != n.name]
                 sig = f"{n.name}({_sig(n)})"
                 syms.append(Symbol(
-                    id=fid, kind=kind, qualname=fq, path=rel, lineno=n.lineno,
-                    content=f"{kind} {fq} in {rel}:{n.lineno} — signature {sig}"
+                    id=fid, kind=kind, qualname=fq, path=key, lineno=n.lineno,
+                    content=f"{kind} {fq} in {key}:{n.lineno} — signature {sig}"
                             + (f" — {doc}" if doc else ""),
                     doc=doc, parent=owner_id, calls=calls,
                 ))
@@ -157,7 +162,8 @@ def parse_file(path: Path, root: Path) -> list[Symbol]:
     return syms
 
 
-def scan_repo(root: Path, max_files: int = 0, include_tests: bool = True) -> list[Symbol]:
+def scan_repo(root: Path, max_files: int = 0, include_tests: bool = True,
+              ns: str = "") -> list[Symbol]:
     syms: list[Symbol] = []
     files = 0
     for dirpath, dirnames, filenames in os.walk(root):
@@ -167,7 +173,7 @@ def scan_repo(root: Path, max_files: int = 0, include_tests: bool = True) -> lis
                 continue
             if not include_tests and (fn.startswith("test_") or fn.endswith("_test.py")):
                 continue
-            syms.extend(parse_file(Path(dirpath) / fn, root))
+            syms.extend(parse_file(Path(dirpath) / fn, root, ns))
             files += 1
             if max_files and files >= max_files:
                 return syms
@@ -178,11 +184,14 @@ class CodeGraph:
     """Ingest a repo's symbols + edges into a Mesh. Idempotent by node id."""
 
     def __init__(self, mesh, root: str | Path, include_tests: bool = True,
-                 link_threshold: float = 0.0):
+                 link_threshold: float = 0.0, namespace: "str | None" = None):
         self.mesh = mesh
         self.root = Path(root)
         self.include_tests = include_tests
         self.link_threshold = link_threshold
+        # None -> derive from the directory name (multi-repo safety);
+        # ""   -> no namespace (single-repo / tests).
+        self.namespace = self.root.name if namespace is None else namespace
         self.stats = {"nodes": 0, "edges": 0, "by_kind": {}, "by_rel": {}}
 
     def _intern(self, sym: Symbol) -> str:
@@ -219,7 +228,8 @@ class CodeGraph:
         self.stats["by_rel"][rel] = self.stats["by_rel"].get(rel, 0) + 1
 
     def ingest(self) -> dict:
-        syms = scan_repo(self.root, include_tests=self.include_tests)
+        syms = scan_repo(self.root, include_tests=self.include_tests,
+                         ns=self.namespace)
         by_id = {s.id: s for s in syms}
 
         # module dotted-name -> module node id (for import resolution)
@@ -278,11 +288,14 @@ def main(argv=None) -> int:
     ap.add_argument("repo", help="path to the repository root")
     ap.add_argument("--db", default="code-graph.db", help="mesh sqlite path")
     ap.add_argument("--no-tests", action="store_true", help="skip test_*.py")
+    ap.add_argument("--ns", default=None,
+                    help="namespace for node ids (default: repo dir name)")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args(argv)
 
     mesh = Mesh(db_path=args.db)
-    g = CodeGraph(mesh, args.repo, include_tests=not args.no_tests)
+    g = CodeGraph(mesh, args.repo, include_tests=not args.no_tests,
+                  namespace=args.ns)
     stats = g.ingest()
 
     if args.json:
