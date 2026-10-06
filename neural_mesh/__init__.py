@@ -108,4 +108,4 @@ __all__ = ["Mesh", "MemoryType", "export_mesh", "import_mesh",
            "export_artifact", "verify_artifact", "import_artifact",
            "serialize", "deserialize",
            "learn_plan", "record_attempt", "gaps_remaining"]
-__version__ = "0.38.0"
+__version__ = "0.39.0"
