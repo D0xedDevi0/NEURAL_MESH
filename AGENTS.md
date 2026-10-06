@@ -19,6 +19,7 @@ PYTHONPATH=. .venv-server/bin/python -m unittest discover -s tests -v
 
 # run the benchmarks
 PYTHONPATH=. python3 bench/versioning_bench.py
+PYTHONPATH=. python3 bench/versioned_truth_bench.py
 PYTHONPATH=. python3 bench/associative_qa.py
 PYTHONPATH=. python3 bench/rust_resonance_bench.py --nodes 5000 --repeats 7
 

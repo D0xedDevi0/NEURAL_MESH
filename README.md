@@ -678,6 +678,107 @@ v4-flash rows above. Honest conclusion: under a stronger judge, resonance edges 
 the exact cross-session/temporal categories it is built for. Overall F1 ~0.34 remains
 modest — retrieval recall, not the judge, is the ceiling (see finding 2).
 
+### LongMemEval — full-500 LLM-judged (v0.38.0, 2026-10-03)
+
+Full canonical 500-case run, real `bge-small` embedder, **flash** judge via the
+Nous Portal path (`--judge --judge-backend nous --embedder real`), zero keys,
+zero empty answers.
+
+```text
+FULL-500 (dense, top_k=5, deepseek-v4.1-flash judge)
+  metric              hashed   real     Δ
+  contextRecall@1     0.164    0.172   +0.008
+  MRR                 0.235    0.252   +0.017
+  Judge EM            0.254    0.268   +0.014
+  Judge F1            0.338    0.348   +0.009
+
+  per-category Judge EM (real):  single-session-user 0.600 · knowledge-update 0.282
+    multi-session 0.301 · single-session-assistant 0.214 · temporal-reasoning 0.135
+    single-session-preference 0.000
+```
+
+**Honest findings (full-500):**
+
+1. **The zero-dep hashed embedder ≈ real bge-small.** ~23h of real-embedder
+   compute bought +1.4 Judge-EM points (0.254 → 0.268). The pip-free core is
+   ~95% of the real thing on this task — an *integrity* win (an honest default),
+   not a performance headline.
+2. **The ceiling is retrieval recall, unchanged.** The correct node is top-1
+   only 17% of the time (ctxR@1 0.172). No judge can score on context the
+   retriever never surfaces. Cross-session/temporal linkage is the real target.
+3. **`single-session-preference` = 0.000 under BOTH embedders** — confirmed a
+   dataset gold-format artifact (gold answers are long "the user would prefer…"
+   paraphrases, un-matchable by exact/substring scoring), not a retrieval miss.
+   The right context IS retrieved; the judge correctly answers `UNKNOWN` and the
+   scorer can't credit it.
+
+> Reproduce: `PYTHONPATH=. .venv-server/bin/python bench/longmemeval_harness.py --judge --judge-backend nous --judge-model deepseek/deepseek-v4.1-flash --embedder real --top_k 5 --output bench/results/longmemeval_judged_v038_flash_real.json`
+
+### LongMemEval — end-to-end semantic judge + retrieval-lever ablation (2026-10-05)
+
+The exact-match **EM** scores above measure *string equality*, not memory
+quality — they structurally undercount any paraphrase ("3" vs "three",
+reformatted times, long preference gold answers). To match how the LongMemEval
+literature actually grades (LLM-judged semantic equivalence), we added an
+**end-to-end judge**: generate a full answer from retrieved context, then a
+`gpt-4o` judge scores semantic equivalence vs gold (YES/NO). Answerer + judge
+are both `gpt-4o`, the same model the published leaderboard numbers use, so the
+result is directly comparable.
+
+```text
+LONG-MEM-EVAL END-TO-END (500 cases, openai/gpt-4o answer + gpt-4o judge)
+  config                    e2e      note
+  dense  @5  (baseline)     0.432
+  consolidate @5            0.422    within judge noise (±0.03)
+  dense  @10                0.502    ROBUST lever (+0.070)
+  dense  @20                0.526    noise-adjacent (+0.024)
+  resonance @10             0.510    retrieval == dense (see finding 3)
+  hybrid  @10               0.506    retrieval == dense (see finding 3)
+  real bge-small @10        (running)
+
+  reference: gpt-4o full-context 0.640 · naive sliding window 0.571
+
+  metric decomposition (dense, hashed, @5):
+    lexical contextRecall@1   0.164   (substring, top-1)
+    semantic recall (top-5)   0.532   (LLM-judged "answer recoverable?")
+    exact-match EM (flash)    0.252
+    end-to-end semantic       0.432
+```
+
+**Honest findings (end-to-end):**
+
+1. **Retrieval is the binding constraint, not synthesis.** 53.2% of cases have
+   the answer in the top-5; the answerer answers correctly on ~81% of those
+   (0.432 / 0.532). `single-session-user` proves it: best retrieval (0.957
+   semantic recall) → best e2e (0.871, above gpt-4o-full-context's own 0.640).
+   The weak categories (temporal 0.31, multi-session 0.58 @20) are retrieval
+   misses, not answer mistakes.
+2. **The only robust lever is widening top-k.** `@5 → @10` = +0.070 (≈4× the
+   judge noise floor). `@10 → @20` = +0.024 (noise-adjacent) — the curve has
+   saturated because the remaining misses are *wrong* nodes, not *missing*
+   nodes. The bag-of-words embedder ranks semantically-adjacent blather above
+   the answer (e.g. "what degree" retrieves money-saving tips).
+3. **All retrieval modes collapse to bag-of-words in the flat harness.**
+   `dense`, `resonance`, and `hybrid` returned 500/500 identical top-3 nodes:
+   the hashed embedder is *already* lexical, and flat per-message ingestion
+   builds no link topology for spreading-activation to walk. **This harness
+   does not exercise NEURAL_MESH's versioning, resonance, or bi-temporal
+   retrieval** — a separate benchmark is needed for those (see "Associative
+   recall" below for the resonance niche that *does* differ).
+4. **The gpt-4o judge has a ±0.03 noise floor** (18/500 cases flip on identical
+   input). So consolidation, top_k 10→20, resonance, and hybrid are all
+   *within* that noise — only top_k 5→10 is a robust, reproducible win.
+5. **`single-session-preference` stays structurally dead** (~0.10 even with
+   gpt-4o): the gold is a long "the user would prefer…" that a single retrieved
+   node cannot synthesize.
+
+*Harness fixes shipped alongside:* `contextRecall@k` was precision (`hits/k`,
+non-monotonic — the old `@5 < @1` artifact) and is now a proper monotonic
+recall; the answerer/judge context window now follows `--top_k` instead of a
+hard `[:5]` cap.
+
+> Reproduce: `PYTHONPATH=. .venv-server/bin/python bench/longmemeval_harness.py --judge-e2e --judge-backend nous --mode dense --top_k 10 --output bench/results/longmemeval_e2e_gpt4o_topk10.json`
+
 ### Associative recall — where resonance *wins* ✅ (and where it doesn't)
 
 LoCoMo is a *single-query → single-answer* task, so flat dense wins there
@@ -713,6 +814,45 @@ dense structurally cannot, and the benchmark proves it on a measurable,
 reproducible case rather than asserting it as philosophy.
 
 > Reproduce: `PYTHONPATH=. python3 bench/associative_qa.py`
+
+### Versioned-truth — the three capabilities flat memory cannot do ✅
+
+LongMemEval grades *flat* retrieval quality, where NEURAL_MESH ties or loses to
+anything with a better embedder. But a flat store has a structural blind spot:
+it keeps one fact per entity and overwrites on update, so it can answer only
+"what is true NOW". NEURAL_MESH keeps a versioned, bi-temporal, provenance-
+carrying graph, so it additionally answers three questions flat memory cannot.
+`bench/versioned_truth_bench.py` scores MESH vs a flat baseline on each, and
+ships a control per pillar (flat ties/wins where it *should* — no overclaim).
+
+```text
+VERSIONED-TRUTH BENCH  (deterministic, pure stdlib)   MESH   FLAT
+  P1  as-of truth      "editor in Jan?" via recall_asof   ✅    ✗ (no time axis)
+  P2  consensus        Sybil-safe + honest DEADLOCK       ✅    ✗ (raw majority)
+  P3  tamper-evidence  verify_artifact rejects tampering  ✅    ✗ (no integrity)
+  controls (flat ties/wins):                             3/3 pass
+```
+
+1. **P1 — as-of truth (bi-temporal recall).** Seed "editor is Vim" (valid from
+   Jan), supersede with "editor is Neovim" (from Feb). `recall_asof(q, as_of=Jan)`
+   returns Vim; `as_of=now` returns Neovim — both recoverable from one store.
+   A flat last-writer-wins dict has *destroyed* the Jan state and returns
+   "Neovim" for both. Control: both answer "now" correctly (tie).
+2. **P2 — cross-agent consensus.** Two honest agents say "crisis" (hard); three
+   clones of one attacker say "calm". Naive raw-majority picks "calm" (3 > 2,
+   gamed); NEURAL_MESH collapses clones to one owner and `CONVERGED` on crisis.
+   A genuine 1-vs-1 split with no confidence signal returns `DEADLOCK` — no
+   winner is fabricated. Control: unanimous agreement just agrees.
+3. **P3 — tamper-evident transfer.** An exported artifact verifies intact and is
+   *refused* when its content is mutated (content-hash mismatch). A flat store
+   has no integrity check — the tampered fact is silently accepted. Control:
+   the intact artifact passes both.
+
+This is the *structural* differentiator the leaderboard can't see — the same
+one Graphiti/Zep ship as their ~22-point temporal edge. It's a capability demo
+with a flat baseline and controls, **not** a LongMemEval score.
+
+> Reproduce: `PYTHONPATH=. python3 bench/versioned_truth_bench.py`
 
 ---
 

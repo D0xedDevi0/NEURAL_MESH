@@ -230,6 +230,81 @@ model fixed to v4-pro-0813 for a full-coverage re-run).
 
 ---
 
+### FULL-500 FINAL (2026-10-03, v0.38.0)
+
+The LongMemEval re-score is now **complete at full scale, LLM-judged, with a real
+embedder** — no OpenRouter key required. The judge path was re-wired to the
+**Nous Portal inference resolver** (the same JWT this agent runs on), defaulting
+to `deepseek/deepseek-v4.1-flash` (non-reasoning — removes v4-pro's intermittent
+empty-content failure mode). Zero empty answers, 500/500 judged.
+
+```text
+FULL-500 (dense, top_k=5, deepseek-v4.1-flash judge via Nous)
+  metric              hashed   real     Δ
+  contextRecall@1     0.164    0.172   +0.008
+  MRR                 0.235    0.252   +0.017
+  Judge EM            0.254    0.268   +0.014   ← full-500 defensible number
+  Judge F1            0.338    0.348   +0.009
+
+  per-category Judge EM (real / hashed):
+    single-session-user      0.600 / 0.586   (+0.014)
+    multi-session            0.301 / 0.293   (+0.008)
+    knowledge-update         0.282 / 0.295   (−0.013)
+    single-session-assistant 0.214 / 0.214   (flat)
+    temporal-reasoning       0.135 / 0.090   (+0.045 ← only real gain)
+    single-session-preference 0.000 / 0.000  (dataset artifact, both)
+```
+
+**Honest read:** the real bge-small embedder bought only +1.4 Judge-EM points
+over the zero-dep hashed embedder (~23h of CPU compute) — the pip-free core is
+already ~95% of the real thing on this task. The ceiling is **retrieval recall**
+(ctxR@1 ≈ 0.17: the right node is top-1 only 17% of the time), not the judge.
+`single-session-preference` is a confirmed dataset gold-format artifact (paraphrase
+gold, un-matchable by exact/substring scoring) — zero under both embedders.
+Repository result: `bench/results/longmemeval_judged_v038_flash_real.json`.
+
+### Acceptance criteria
+🟦 Full-500 LLM-judged numbers published (README + this doc) — DONE.
+🟦 Judge path re-keyed from OpenRouter → Nous Portal (no external funding gate) — DONE.
+🟦 Honest framing preserved: zero-dep ≈ real embedder reported as an integrity win, not a performance brag — DONE.
+
+---
+
+### END-TO-END SEMANTIC JUDGE + RETRIEVAL ABLATION (2026-10-05)
+
+Built `--judge-e2e` (generate answer from retrieved context → GPT-4o semantic
+judge vs gold) to convert the exact-match floor into a leaderboard-comparable
+number, then ablated retrieval levers. A **gpt-4o judge flipped 18/500 cases on
+identical input → ±0.03 noise floor**, which reframes every small delta.
+
+```text
+LONG-MEM-EVAL E2E (500, gpt-4o answer + gpt-4o judge)   reference
+  dense @5   0.432 (baseline)                            full-context 0.640
+  consolidate@5 0.422   within noise                     naive window 0.571
+  dense @10  0.502   ROBUST (+0.070, ~4x noise)
+  dense @20  0.526   noise-adjacent (+0.024)
+  resonance@10 0.510  retrieval == dense (500/500 identical)
+  hybrid@10   0.506  retrieval == dense (500/500 identical)
+  real bge-small@10  (RUNNING, ~23h)
+```
+
+**Honest findings:**
+1. Retrieval is the binding constraint (semantic recall 0.532 → e2e 0.432 ≈ 81%
+   conditional synthesis). Synthesis is strong; retrieval is the ceiling.
+2. Only robust lever = top_k 5→10. Curve saturates: remaining misses are *wrong*
+   nodes (bag-of-words ranks semantically-adjacent blather above the answer).
+3. All `--mode` flags collapse to bag-of-words in the flat harness (500/500
+   identical top-3). Resonance/versioning/bi-temporal are NOT exercised — the
+   flat per-message ingestion builds no link topology.
+4. preference stays ~0.10 even with gpt-4o (long-paraphrase gold, unsynthesizable
+   from one node).
+
+*Harness fixes:* `contextRecall@k` was precision (non-monotonic `@5<@1`) →
+proper monotonic recall; answerer/judge window now follows `--top_k` (was hard
+`[:5]`). Result files under `bench/results/longmemeval_e2e_gpt4o_*.json`.
+
+---
+
 ## Goal 6 — v0.29.0: fused retrieval, x402 selector fix, reputation-sync repair (2026-08-24)
 
 **Status:** 🟦 SHIPPED CODE + TESTS GREEN (release commit pending fused-bench verdict)
@@ -741,7 +816,7 @@ must show exactly 4 matches, all the new version.
 | 2 | Subgraph completeness | none | no | 🟦 DONE (v0.28.0) |
 | 3 | Rust BM25 | none | no | 🟦 DONE (v0.28.0) |
 | 4 | Helixa on-chain attestation | **human GO** | **yes** | 🟦 DONE (agentId 63912) |
-| 5 | LongMemEval re-score | `fastembed` + key | no | next |
+| 5 | LongMemEval re-score | none (Nous judge path) | no | 🟦 DONE (v0.38.0, full-500 judged) |
 
 **Recommended execution order:** 1 → 2 → 3 (all non-irreversible, bundle in
 parallel), then 5, then pause for GO on 4. Verify every irreversibility

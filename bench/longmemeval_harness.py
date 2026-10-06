@@ -23,7 +23,7 @@ Full oracle run:
 With real embedder (needs fastembed):
   PYTHONPATH=. python3 bench/longmemeval_harness.py --top_k 5 --embedder real
 
-With LLM judge (needs OPENROUTER_API_KEY or OPENAI_API_KEY):
+With LLM judge (default Nous Portal backend; OpenRouter/OpenAI opt-in):
   PYTHONPATH=. .venv-server/bin/python bench/longmemeval_harness.py --judge --top_k 5 --limit 50
 """
 
@@ -73,8 +73,10 @@ def f1_score(prediction, ground_truth):
 
 
 def context_recall(retrieved_contents, gold_answer, k=None):
-    """Fraction of top-k nodes whose content contains the gold answer string.
-    contextRecall@k = |{node_i in top-k: answer in node_i.content}| / k"""
+    """Recall@k — 1.0 if the gold answer string appears in ANY of the top-k
+    retrieved nodes, else 0.0. Monotonic in k (a proper recall). This is a
+    LEXICAL substring check; it structurally undercounts paraphrases — see
+    judge_semantic_recall / judge_e2e for the semantic alternatives."""
     if k is None:
         k = len(retrieved_contents)
     if k == 0:
@@ -82,7 +84,7 @@ def context_recall(retrieved_contents, gold_answer, k=None):
     answer_lower = str(gold_answer).strip().lower()
     hits = sum(1 for c in retrieved_contents[:k]
                if answer_lower in str(c).lower())
-    return hits / k
+    return 1.0 if hits > 0 else 0.0
 
 
 def mrr(retrieved_contents, gold_answer):
@@ -114,29 +116,69 @@ def load_longmemeval(path="data/longmemeval_oracle.json"):
 
 # ─── Ingestion ────────────────────────────────────────────────────────────
 
-def ingest_case(mesh, case):
-    """Load all haystack sessions of one LongMemEval case into the mesh.
+def _parse_date(s):
+    """Parse LongMemEval's 'YYYY/MM/DD (Www) HH:MM' to epoch seconds."""
+    import re
+    m = re.search(r"(\d{4})/(\d{2})/(\d{2})[^\d]*(\d{2}):(\d{2})", s or "")
+    if not m:
+        return 0.0
+    from datetime import datetime
+    return datetime(int(m.group(1)), int(m.group(2)), int(m.group(3)),
+                    int(m.group(4)), int(m.group(5))).timestamp()
 
-    Each message becomes an episodic MemoryNode tagged with session_id,
-    message index, and role. This mimics how a real chat assistant would
-    store conversation memory.
+
+def _consolidate_session(session):
+    """Turn-segment chunking: one [user] turn + its [assistant...] replies = one
+    segment. Mirrors real turn consolidation and keeps the query-relevant
+    exchange intact instead of splitting it into truncated single-message nodes.
     """
+    segments, cur = [], []
+    for m in session:
+        if m["role"] == "user" and cur:
+            segments.append(cur)
+            cur = []
+        cur.append(m)
+    if cur:
+        segments.append(cur)
+    return segments
+
+
+def ingest_case(mesh, case, consolidate=False):
+    """Load all haystack sessions of one case, bi-temporally stamped.
+
+    Sessions are re-ordered chronologically by their real ``haystack_dates``
+    (the list order is NOT chronological), and each node is stamped with
+    ``valid_from`` = parsed message time so the mesh's bi-temporal axis reflects
+    real ordering. With ``consolidate=True``, each session's turns merge into
+    [user]+[assistant] segments instead of one node per message.
+    """
+    dates = [_parse_date(d) for d in case.get("haystack_dates", [])]
+    order = sorted(
+        range(len(case["haystack_sessions"])),
+        key=lambda i: dates[i] if i < len(dates) else 0.0,
+    )
     node_ids = []
-    for session_idx, session in enumerate(case["haystack_sessions"]):
-        session_id = f"{case['question_id']}_s{session_idx}"
-        for msg_idx, msg in enumerate(session):
-            content = f"[{msg['role']}]: {msg['content']}"
+    for rank, session_idx in enumerate(order):
+        session = case["haystack_sessions"][session_idx]
+        base_ts = dates[session_idx] if session_idx < len(dates) else rank * 86400.0
+        units = _consolidate_session(session) if consolidate else [[m] for m in session]
+        for seg_idx, unit in enumerate(units):
+            content = "\n".join(f"[{m['role']}]: {m['content']}" for m in unit)
+            first = unit[0]
+            ts = base_ts + seg_idx * 60.0  # ~1-min granularity within a session
             node = mesh.add(
                 content=content,
                 type=MemoryType.EPISODIC,
                 provenance="longmemeval",
                 by=f"session-{session_idx}",
+                valid_from=ts,
                 meta={
                     "case_id": case["question_id"],
-                    "session_id": session_id,
-                    "msg_index": msg_idx,
-                    "role": msg["role"],
+                    "session_id": f"{case['question_id']}_s{session_idx}",
+                    "msg_index": seg_idx,
+                    "role": first["role"],
                     "question_type": case["question_type"],
+                    "consolidated": bool(consolidate),
                 },
             )
             node_ids.append(node.id)
@@ -145,9 +187,38 @@ def ingest_case(mesh, case):
 
 # ─── Retrieval ────────────────────────────────────────────────────────────
 
-def retrieve_for_question(mesh, question, top_k=5, mode="dense"):
-    """Retrieve top-k nodes for a question using the mesh's recall."""
-    results = mesh.recall(question, top_k=top_k)
+def _recall_recency(mesh, query, top_k=5, alpha=0.15):
+    """Dense recall with a recency tiebreaker over the bi-temporal axis.
+
+    score = cosine(query, node) + alpha * normalized(valid_from within case).
+    Deterministic, no LLM: surfaces the *latest* statement of a fact for
+    "what is X now" questions while staying cosine-led so "first/earlier X"
+    questions aren't flipped arbitrarily.
+    """
+    from neural_mesh.core import _sim
+    qe = mesh._embed_query(query)
+    nodes = [n for n in mesh._load().values()
+             if not getattr(n, "superseded_by", "")
+             and getattr(n, "lane", "") != "quarantine"]
+    vf = [float(getattr(n, "valid_from", 0.0) or 0.0) for n in nodes]
+    lo = min(vf) if vf else 0.0
+    rng = (max(vf) - lo) if len(vf) > 1 else 1.0
+    rng = rng or 1.0
+    scored = []
+    for n in nodes:
+        sim = max(0.0, _sim(qe, getattr(n, "embedding", [])))
+        rec = (float(getattr(n, "valid_from", 0.0) or 0.0) - lo) / rng
+        scored.append((sim + alpha * rec, n))
+    scored.sort(key=lambda x: -x[0])
+    return [n for _, n in scored[:top_k]]
+
+
+def retrieve_for_question(mesh, question, top_k=5, mode="dense", as_of=None):
+    """Retrieve top-k nodes for a question using the mesh's recall.
+
+    ``mode`` selects the retrieval strategy; ``as_of`` (epoch seconds) pins the
+    bi-temporal modes (``asof``) to the question's timestamp.
+    """
     if mode == "dense":
         results = mesh.dense_recall(question, top_k=top_k)
     elif mode == "lexical":
@@ -158,6 +229,13 @@ def retrieve_for_question(mesh, question, top_k=5, mode="dense"):
         results = mesh.recall(question, top_k=top_k)
     elif mode == "fused":
         results = mesh.fused_recall(question, top_k=top_k)
+    elif mode == "asof":
+        from neural_mesh.temporal import recall_asof
+        results = recall_asof(mesh, question, as_of=as_of, top_k=top_k)
+    elif mode == "recency":
+        results = _recall_recency(mesh, question, top_k=top_k)
+    else:
+        results = mesh.dense_recall(question, top_k=top_k)
     return [r.content for r in results]
 
 
@@ -182,25 +260,40 @@ def _nous_credentials():
         return None, None
 
 
-def judge_answer(query, context_chunks, gold_answer, api_key=None):
+def judge_answer(query, context_chunks, gold_answer, api_key=None,
+                 backend="nous", model=None):
     """Ask an LLM to answer based on retrieved context, then score vs gold.
 
-    Routes through the Hermes/Nous Portal inference path (httpx), falling back
-    to OPENROUTER/OPENAI env keys only if present (both are exhausted as of
-    2026-08). urllib is NOT used — Cloudflare 1010-blocks its TLS fingerprint.
+    Default backend is the Nous Portal inference path (the same JWT resolver
+    Hermes itself uses) over httpx — urllib is NOT used because Cloudflare
+    1010-blocks its TLS fingerprint. OpenRouter/OpenAI are opt-in alternates
+    via `backend=` and are only reachable when their env key/credential exists.
     """
     import httpx
 
-    if not api_key:
-        api_key = os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENAI_API_KEY")
-    base_url = None
-    if not api_key:
-        # Nous portal path (Hermes resolver)
+    if backend == "nous":
         api_key, base_url = _nous_credentials()
-    if not api_key:
-        return {"answer": "", "em": 0.0, "f1": 0.0, "note": "no API key"}
+        if not api_key:
+            return {"answer": "", "em": 0.0, "f1": 0.0,
+                    "note": "no Nous runtime credentials"}
+        url = (base_url or "https://inference-api.nousresearch.com/v1").rstrip("/") + "/chat/completions"
+        model = model or os.environ.get("NOUS_JUDGE_MODEL", "deepseek/deepseek-v4.1-flash")
+    elif backend == "openrouter":
+        api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+        if not api_key:
+            return {"answer": "", "em": 0.0, "f1": 0.0, "note": "no OPENROUTER_API_KEY"}
+        url = "https://openrouter.ai/api/v1/chat/completions"
+        model = model or os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-chat-v3-0324")
+    elif backend == "openai":
+        api_key = api_key or os.environ.get("OPENAI_API_KEY")
+        if not api_key:
+            return {"answer": "", "em": 0.0, "f1": 0.0, "note": "no OPENAI_API_KEY"}
+        url = "https://api.openai.com/v1/chat/completions"
+        model = model or os.environ.get("OPENAI_JUDGE_MODEL", "gpt-4o-mini")
+    else:
+        return {"answer": "", "em": 0.0, "f1": 0.0, "note": f"unknown backend {backend}"}
 
-    ctx_text = "\n\n".join(c[:500] for c in context_chunks[:5])
+    ctx_text = "\n\n".join(c[:500] for c in context_chunks)
     # NOTE on model behavior: smaller/free judge models (e.g. tencent/hy3:free)
     # tend to echo the question as a preamble ("We need to parse the
     # conversation history to answer: ...") instead of emitting the final
@@ -220,12 +313,6 @@ def judge_answer(query, context_chunks, gold_answer, api_key=None):
         "ANSWER:"
     )
 
-    if base_url:
-        url = base_url.rstrip("/") + "/chat/completions"
-        model = os.environ.get("NOUS_JUDGE_MODEL", "deepseek/deepseek-v4-pro-0813")
-    else:
-        url = "https://openrouter.ai/api/v1/chat/completions"
-        model = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-chat-v3-0324")
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -289,10 +376,161 @@ def judge_answer(query, context_chunks, gold_answer, api_key=None):
     }
 
 
+def judge_semantic_recall(query, context_chunks, gold_answer, api_key=None,
+                          backend="nous", model=None):
+    """Semantic retrieval recall — does the retrieved memory support the gold?
+
+    Replaces the LEXICAL ``context_recall`` substring check (which cannot credit
+    a paraphrase, a rephrased number, or a long preference answer) with a single
+    LLM-judged YES/NO: is the reference answer recoverable from the retrieved
+    context? Measures retrieval quality alone, independent of any downstream
+    generation step — the honest semantic replacement for ctxR@1.
+    """
+    import httpx
+
+    if backend == "nous":
+        api_key, base_url = _nous_credentials()
+        if not api_key:
+            return {"answer": "", "score": 0.0, "note": "no Nous runtime credentials"}
+        url = (base_url or "https://inference-api.nousresearch.com/v1").rstrip("/") + "/chat/completions"
+        model = model or os.environ.get("NOUS_JUDGE_MODEL", "deepseek/deepseek-v4.1-flash")
+    else:
+        return {"answer": "", "score": 0.0,
+                "note": f"semantic judge only supports nous backend (got {backend})"}
+
+    ctx_text = "\n\n".join(c[:500] for c in context_chunks)
+    prompt = (
+        "You are a memory-retrieval grader. Decide whether the retrieved memory "
+        "context CONTAINS the information needed to give the reference answer.\n\n"
+        "RULES:\n"
+        "- Output ONLY 'YES' or 'NO'. No explanation.\n"
+        "- 'YES' if the context supports the reference answer even when phrased "
+        "differently (paraphrase, rephrased number, or changed wording is fine).\n"
+        "- 'NO' if the context lacks it, contradicts it, or is unrelated.\n\n"
+        f"QUESTION: {query}\n\n"
+        f"REFERENCE ANSWER: {gold_answer}\n\n"
+        f"RETRIEVED CONTEXT:\n{ctx_text}\n\n"
+        "VERDICT (YES or NO):"
+    )
+    body = {
+        "model": model,
+        "messages": [{"role": "user", "content": prompt}],
+        # 512 (not 32): flash is a reasoning model and spends a small budget on a
+        # "We need answer only YES/NO..." reasoning preamble BEFORE the verdict.
+        # At 32 tokens the reasoning eats the whole budget and `content` is empty;
+        # at 512 the verdict lands in `content`.
+        "max_tokens": 512,
+        "temperature": 0,
+    }
+
+    verdict = ""
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=45,
+                              headers={"Authorization": f"Bearer {api_key}",
+                                       "Content-Type": "application/json"}) as client:
+                resp = client.post(url, json=body)
+                result = resp.json()
+            candidate = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            if not (candidate or "").strip():
+                candidate = result.get("choices", [{}])[0].get("message", {}).get("reasoning", "")
+            if (candidate or "").strip():
+                verdict = candidate.strip()
+                break
+            time.sleep(2 * (attempt + 1))
+        except Exception:
+            verdict = ""
+            break
+
+    up = verdict.upper()
+    semantic = 1.0 if ("YES" in up and "NO" not in up) else 0.0
+    return {"answer": verdict, "score": semantic}
+
+
+def _nous_chat(model, prompt, *, max_tokens=256, temperature=0.0, backend="nous"):
+    """Single Nous completion; returns assistant text (content, else reasoning)."""
+    import httpx
+    if backend != "nous":
+        return ""
+    api_key, base_url = _nous_credentials()
+    if not api_key:
+        return ""
+    url = (base_url or "https://inference-api.nousresearch.com/v1").rstrip("/") + "/chat/completions"
+    body = {"model": model, "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens, "temperature": temperature}
+    for attempt in range(3):
+        try:
+            with httpx.Client(timeout=60,
+                              headers={"Authorization": f"Bearer {api_key}",
+                                       "Content-Type": "application/json"}) as client:
+                resp = client.post(url, json=body)
+                result = resp.json()
+            msg = result.get("choices", [{}])[0].get("message", {})
+            out = msg.get("content") or ""
+            if not out.strip():
+                out = msg.get("reasoning") or ""
+            if out.strip():
+                return out.strip()
+        except Exception:
+            return ""
+        time.sleep(2 * (attempt + 1))
+    return ""
+
+
+def generate_answer(question, context_chunks, model=None, backend="nous"):
+    """Generate a free-form answer from retrieved context (end-to-end answerer).
+
+    Defaults to GPT-4o to stay leaderboard-comparable (LongMemEval's published
+    numbers use GPT-4o as the answering model).
+    """
+    model = model or "openai/gpt-4o"
+    ctx_text = "\n\n".join(c[:800] for c in context_chunks)
+    prompt = (
+        "You are a helpful assistant with access to the user's long-term memory.\n"
+        "Answer the question using ONLY the information in the retrieved memory "
+        "below.\n"
+        "If the memory does not contain the answer, reply exactly: UNKNOWN\n"
+        "Answer concisely but completely; paraphrase is fine.\n\n"
+        f"QUESTION: {question}\n\n"
+        f"RETRIEVED MEMORY:\n{ctx_text}\n\n"
+        "ANSWER:"
+    )
+    return _nous_chat(model, prompt, max_tokens=256, backend=backend)
+
+
+def judge_equivalence(question, candidate, gold, model=None, backend="nous"):
+    """LLM-judged semantic equivalence of candidate vs reference answer.
+
+    This is the leaderboard-comparable END-TO-END correctness signal: is the
+    generated answer semantically correct w.r.t. the gold (paraphrase, numeric
+    reformatting, synonymy all count)? YES/NO -> 0/1. Defaults to GPT-4o to
+    match the published GPT-4o judge.
+    """
+    model = model or "openai/gpt-4o"
+    prompt = (
+        "You are grading a memory assistant's answer.\n"
+        "Decide whether the candidate answer is SEMANTICALLY EQUIVALENT to the "
+        "reference answer (same meaning). Paraphrase, numeric reformatting "
+        "(e.g. '3' vs 'three'), and synonymy are all acceptable.\n\n"
+        "Output ONLY 'YES' or 'NO'. No explanation.\n\n"
+        f"QUESTION: {question}\n\n"
+        f"REFERENCE ANSWER: {gold}\n\n"
+        f"CANDIDATE ANSWER: {candidate}\n\n"
+        "EQUIVALENT (YES or NO):"
+    )
+    verdict = _nous_chat(model, prompt, max_tokens=512, backend=backend)
+    up = verdict.upper()
+    score = 1.0 if ("YES" in up and "NO" not in up) else 0.0
+    return {"answer": verdict, "score": score}
+
+
 # ─── Main benchmark ───────────────────────────────────────────────────────
 
 def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
-                  embedder=None, validator=False, query_rewrite=False):
+                  embedder=None, validator=False, query_rewrite=False,
+                  judge_backend="nous", judge_model=None, consolidate=False,
+                  judge_semantic=False, judge_e2e=False,
+                  answer_model=None, e2e_judge_model=None):
     """Run LongMemEval benchmark and return per-category + overall metrics.
 
     `embedder` is either a callable embedder instance (e.g. RealEmbedder()) or
@@ -312,11 +550,12 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
         from neural_mesh.embed import embed as _hashed_embed
         mesh = Mesh(":memory:", embedder=embedder or _hashed_embed,
                      validator=validator, query_rewrite=query_rewrite)
-        node_ids = ingest_case(mesh, case)
+        node_ids = ingest_case(mesh, case, consolidate=consolidate)
 
-        # Retrieve
+        # Retrieve (bi-temporal modes pinned to the question's real timestamp)
+        q_date_ts = _parse_date(case.get("question_date", ""))
         context_chunks = retrieve_for_question(
-            mesh, case["question"], top_k=top_k, mode=mode
+            mesh, case["question"], top_k=top_k, mode=mode, as_of=q_date_ts
         )
 
         # Retrieval metrics
@@ -328,8 +567,21 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
         judge_result = {}
         if judge:
             judge_result = judge_answer(
-                case["question"], context_chunks, case["answer"]
+                case["question"], context_chunks, case["answer"],
+                backend=judge_backend, model=judge_model,
             )
+        if judge_semantic:
+            judge_result["semantic"] = judge_semantic_recall(
+                case["question"], context_chunks, case["answer"],
+                backend=judge_backend, model=judge_model,
+            )
+        if judge_e2e:
+            gen = generate_answer(case["question"], context_chunks,
+                                  model=answer_model, backend=judge_backend)
+            eq = judge_equivalence(case["question"], gen, case["answer"],
+                                   model=e2e_judge_model, backend=judge_backend)
+            judge_result["e2e"] = {"answer": gen, "verdict": eq["answer"],
+                                   "score": eq["score"]}
 
         case_elapsed = time.time() - case_start
 
@@ -345,7 +597,7 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
             "retrieved": [c[:120] for c in context_chunks[:3]],
             "elapsed": round(case_elapsed, 2),
         }
-        if judge:
+        if judge or judge_semantic or judge_e2e:
             result["judge"] = judge_result
         results.append(result)
 
@@ -377,6 +629,20 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
                 per_category[qtype]["judge_f1"] = (
                     sum(it["judge"]["f1"] for it in valid) / len(valid)
                 )
+        if judge_semantic:
+            sv = [it for it in items
+                  if it.get("judge", {}).get("semantic", {}) is not None]
+            if sv:
+                per_category[qtype]["judge_semantic"] = (
+                    sum(it["judge"]["semantic"]["score"] for it in sv) / len(sv)
+                )
+        if judge_e2e:
+            ev = [it for it in items
+                  if it.get("judge", {}).get("e2e", {}) is not None]
+            if ev:
+                per_category[qtype]["judge_e2e"] = (
+                    sum(it["judge"]["e2e"]["score"] for it in ev) / len(ev)
+                )
 
     overall = {
         "cases": len(results),
@@ -393,6 +659,18 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
         if valid:
             overall["judge_em"] = sum(r["judge"]["em"] for r in valid) / len(valid)
             overall["judge_f1"] = sum(r["judge"]["f1"] for r in valid) / len(valid)
+    if judge_semantic:
+        sv = [r for r in results if r.get("judge", {}).get("semantic", {}) is not None]
+        if sv:
+            overall["judge_semantic"] = (
+                sum(r["judge"]["semantic"]["score"] for r in sv) / len(sv)
+            )
+    if judge_e2e:
+        ev = [r for r in results if r.get("judge", {}).get("e2e", {}) is not None]
+        if ev:
+            overall["judge_e2e"] = (
+                sum(r["judge"]["e2e"]["score"] for r in ev) / len(ev)
+            )
 
     return {"per_category": per_category, "overall": overall, "results": results}
 
@@ -403,12 +681,26 @@ def main():
     )
     parser.add_argument("--top_k", type=int, default=5, help="Top-k retrieval (default 5)")
     parser.add_argument("--mode", default="dense",
-                        choices=["dense", "lexical", "hybrid", "resonance"],
-                        help="Retrieval mode (default: dense)")
+                        choices=["dense", "lexical", "hybrid", "resonance", "fused",
+                                 "asof", "recency"],
+                        help="Retrieval mode (default: dense; asof/recency are bi-temporal)")
     parser.add_argument("--limit", type=int, default=None,
                         help="Cap cases (default: all 500)")
     parser.add_argument("--judge", action="store_true",
-                        help="Enable LLM judge (needs OPENROUTER_API_KEY)")
+                        help="Enable LLM judge (default backend: Nous Portal, deepseek v4.1-flash)")
+    parser.add_argument("--judge-backend", default="nous",
+                        choices=["nous", "openrouter", "openai"],
+                        help="Judge backend (default: nous)")
+    parser.add_argument("--judge-model", default=None,
+                        help="Override judge model slug")
+    parser.add_argument("--judge-semantic", action="store_true", default=False,
+                        help="Semantic retrieval recall: LLM-judge YES/NO whether retrieved context supports the gold (replaces lexical ctxR)")
+    parser.add_argument("--judge-e2e", action="store_true", default=False,
+                        help="End-to-end semantic: generate an answer, then LLM-judge semantic equivalence vs gold (leaderboard-comparable)")
+    parser.add_argument("--answer-model", default=None,
+                        help="Answerer model for --judge-e2e (default: openai/gpt-4o)")
+    parser.add_argument("--e2e-judge-model", default=None,
+                        help="Equivalence judge model for --judge-e2e (default: openai/gpt-4o)")
     parser.add_argument("--embedder", default="hashed",
                         choices=["hashed", "real"],
                         help="Embedder: hashed (stdlib) or real (fastembed)")
@@ -420,6 +712,8 @@ def main():
                         help="Enable ContentValidator (off by default for speed)")
     parser.add_argument("--rewrite", action="store_true", default=False,
                         help="Apply neural_mesh.query_rewrite to the embed query")
+    parser.add_argument("--consolidate", action="store_true", default=False,
+                        help="Ingest [user]+[assistant] turn-segments instead of one node per message")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -458,6 +752,13 @@ def main():
         embedder=embedder,
         validator=args.validator,
         query_rewrite=args.rewrite,
+        judge_backend=args.judge_backend,
+        judge_model=args.judge_model,
+        consolidate=args.consolidate,
+        judge_semantic=args.judge_semantic,
+        judge_e2e=args.judge_e2e,
+        answer_model=args.answer_model,
+        e2e_judge_model=args.e2e_judge_model,
     )
 
     # Print report
@@ -472,6 +773,10 @@ def main():
         if args.judge and "judge_em" in metrics:
             print(f"    Judge EM:         {metrics['judge_em']:.4f}")
             print(f"    Judge F1:         {metrics['judge_f1']:.4f}")
+        if args.judge_semantic and "judge_semantic" in metrics:
+            print(f"    Judge semantic:   {metrics['judge_semantic']:.4f}")
+        if args.judge_e2e and "judge_e2e" in metrics:
+            print(f"    Judge e2e:        {metrics['judge_e2e']:.4f}")
 
     ov = report["overall"]
     print(f"\n{'═' * 60}")
@@ -487,6 +792,10 @@ def main():
     if args.judge and "judge_em" in ov:
         print(f"  Judge EM:          {ov['judge_em']:.4f}")
         print(f"  Judge F1:          {ov['judge_f1']:.4f}")
+    if args.judge_semantic and "judge_semantic" in ov:
+        print(f"  Judge semantic:    {ov['judge_semantic']:.4f}")
+    if args.judge_e2e and "judge_e2e" in ov:
+        print(f"  Judge e2e:         {ov['judge_e2e']:.4f}")
     print(f"  Wall time:         {ov['wall_time']:.1f}s")
     print(f"\n  NOTE: contextRecall is a LEXICAL substring check — it measures")
     print(f"  whether the gold answer string appears in retrieved nodes.")
