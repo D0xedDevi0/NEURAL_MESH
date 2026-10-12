@@ -530,24 +530,47 @@ def judge_equivalence(question, candidate, gold, model=None, backend="nous"):
 
 # ─── Main benchmark ───────────────────────────────────────────────────────
 
+def _checkpoint(path, results):
+    """Atomically persist partial results (os.replace = no torn file on OOM)."""
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump({"results": results}, f, indent=2, default=str)
+    os.replace(tmp, path)
+
+
 def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
                   embedder=None, validator=False, query_rewrite=False,
                   judge_backend="nous", judge_model=None, consolidate=False,
                   judge_semantic=False, judge_e2e=False,
-                  answer_model=None, e2e_judge_model=None):
+                  answer_model=None, e2e_judge_model=None,
+                  checkpoint_path=None, resume=False):
     """Run LongMemEval benchmark and return per-category + overall metrics.
 
     `embedder` is either a callable embedder instance (e.g. RealEmbedder()) or
     None, in which case the zero-dep hashed embedder is used.
     `query_rewrite` toggles neural_mesh.query_rewrite on the mesh's embed query.
+
+    `checkpoint_path` (optional) atomically persists partial results after every
+    case so a crash/OOM mid-run loses at most one case; `resume=True` reloads that
+    partial and skips already-finished question_ids instead of re-running them.
     """
     if limit:
         cases = cases[:limit]
 
+    done_ids = set()
     results = []
+    if resume and checkpoint_path and os.path.exists(checkpoint_path):
+        with open(checkpoint_path) as f:
+            prev = json.load(f)
+        results = prev.get("results", [])
+        done_ids = {r["question_id"] for r in results}
+        print(f"  [resume] {len(done_ids)} cases already done, skipping")
+
     start_time = time.time()
 
     for idx, case in enumerate(cases):
+        if case["question_id"] in done_ids:
+            continue
         case_start = time.time()
 
         # Fresh mesh per case (LongMemEval cases are independent)
@@ -604,6 +627,9 @@ def run_benchmark(cases, top_k=5, mode="dense", judge=False, limit=None,
         if judge or judge_semantic or judge_e2e:
             result["judge"] = judge_result
         results.append(result)
+
+        if checkpoint_path:
+            _checkpoint(checkpoint_path, results)
 
         if (idx + 1) % 10 == 0 or idx == len(cases) - 1:
             elapsed = time.time() - start_time
@@ -718,6 +744,8 @@ def main():
                         help="Apply neural_mesh.query_rewrite to the embed query")
     parser.add_argument("--consolidate", action="store_true", default=False,
                         help="Ingest [user]+[assistant] turn-segments instead of one node per message")
+    parser.add_argument("--resume", action="store_true", default=False,
+                        help="Resume from a prior run's checkpoint (requires --output)")
     args = parser.parse_args()
 
     print("=" * 60)
@@ -763,6 +791,8 @@ def main():
         judge_e2e=args.judge_e2e,
         answer_model=args.answer_model,
         e2e_judge_model=args.e2e_judge_model,
+        checkpoint_path=(args.output + ".partial") if args.output else None,
+        resume=args.resume,
     )
 
     # Print report
