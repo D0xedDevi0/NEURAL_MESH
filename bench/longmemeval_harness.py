@@ -249,7 +249,11 @@ def _nous_credentials():
     but accepts httpx (Hermes' own TLS fingerprint).
     """
     try:
-        sys.path.insert(0, "/opt/hermes/.venv/lib/python3.13/site-packages")
+        # Resolve Hermes' own venv site-packages (version drifts across platform
+        # auto-updates — never hard-code the interpreter minor).
+        import glob as _glob
+        for _sp in _glob.glob("/opt/hermes/.venv/lib/python3.*/site-packages"):
+            sys.path.insert(0, _sp)
         sys.path.insert(0, "/opt/hermes")
         from hermes_cli.auth import resolve_nous_runtime_credentials
         creds = resolve_nous_runtime_credentials(timeout_seconds=20)

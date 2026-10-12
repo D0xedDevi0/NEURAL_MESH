@@ -1,8 +1,10 @@
 """Probe: get Nous runtime credentials via Hermes' own resolver, then call inference."""
 import sys, json, urllib.request, urllib.error
 
-# Ensure hermes package importable
-sys.path.insert(0, "/opt/hermes/.venv/lib/python3.13/site-packages")
+# Ensure hermes package importable (version drifts across platform auto-updates)
+import glob as _glob
+for _sp in _glob.glob("/opt/hermes/.venv/lib/python3.*/site-packages"):
+    sys.path.insert(0, _sp)
 sys.path.insert(0, "/opt/hermes")
 
 from hermes_cli.auth import resolve_nous_runtime_credentials  # noqa: E402
