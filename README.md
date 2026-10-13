@@ -21,7 +21,7 @@
 > purpose, and versioned truth. Light enough for a tiny container, deep enough
 > to share across agents. 🟦
 
-**Repo:** `github.com/BasedNUKEM/NEURAL_MESH` · **Status:** LIVE · **Latest:** [v0.21.0 — Rust-accelerated resonance](https://github.com/BasedNUKEM/NEURAL_MESH/releases) · **License:** MIT
+**Repo:** `github.com/BasedNUKEM/NEURAL_MESH` · **Status:** LIVE · **Latest:** [v0.39.0 — Rust-accelerated resonance](https://github.com/BasedNUKEM/NEURAL_MESH/releases) · **License:** MIT
 
 ---
 
@@ -34,7 +34,7 @@
 | Related memories | lonely singleton hit | resonance → the **cluster** |
 | Big tool output | 200 KB eats context | `mesh://` pointer, **36 bytes** |
 | Old/weak memories | accumulate forever | sleep → **prune on purpose** |
-| Query speed | — | Rust hot path: **1.63× faster**, exact parity |
+| Query speed | — | Rust hot path: **1.192–1.395× faster**, exact parity (4 runs on a contended shared 8-core AMD EPYC container, `--repeats 7`; [audit](docs/reproduction-report-2026-10-07.md)). The earlier 1.63× may reflect a quieter host. |
 
 ---
 
@@ -309,7 +309,7 @@ city, cat status, deploy rule, language preference). 6 questions ask for the
 ```
 VERSIONING / CONFLICT  (n=6 update-questions, 12 writes / 6 updates)
   Stale (wrong) hits in top-5:
-    FLAT : 17/6 queries returned stale data
+    FLAT : 18/6 queries returned stale data
     MESH : 0/6   queries returned stale data
   Top-1 points at CURRENT fact:
     FLAT : 1/6  =  16.7%
