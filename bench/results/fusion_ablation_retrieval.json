@@ -1,0 +1,59 @@
+{
+  "by_type": {
+    "knowledge-update": {
+      "fused_r10": 0.7308,
+      "fused_role_r10": 0.7308,
+      "fused_session_r10": 0.7308,
+      "hashed_r10": 0.6795,
+      "real_r10": 0.6923
+    },
+    "multi-session": {
+      "fused_r10": 0.2406,
+      "fused_role_r10": 0.2406,
+      "fused_session_r10": 0.2632,
+      "hashed_r10": 0.2481,
+      "real_r10": 0.3459
+    },
+    "single-session-assistant": {
+      "fused_r10": 0.5357,
+      "fused_role_r10": 0.5357,
+      "fused_session_r10": 0.5357,
+      "hashed_r10": 0.5357,
+      "real_r10": 0.5357
+    },
+    "single-session-preference": {
+      "fused_r10": 0.0,
+      "fused_role_r10": 0.0,
+      "fused_session_r10": 0.0,
+      "hashed_r10": 0.0,
+      "real_r10": 0.0
+    },
+    "single-session-user": {
+      "fused_r10": 0.8143,
+      "fused_role_r10": 0.8143,
+      "fused_session_r10": 0.8143,
+      "hashed_r10": 0.8143,
+      "real_r10": 0.8143
+    },
+    "temporal-reasoning": {
+      "fused_r10": 0.2707,
+      "fused_role_r10": 0.2632,
+      "fused_session_r10": 0.2707,
+      "hashed_r10": 0.2556,
+      "real_r10": 0.2707
+    }
+  },
+  "n": 500,
+  "overall": {
+    "fused_mrr": 0.2598,
+    "fused_r10": 0.424,
+    "fused_role_mrr": 0.2413,
+    "fused_role_r10": 0.422,
+    "fused_session_mrr": 0.2624,
+    "fused_session_r10": 0.43,
+    "hashed_mrr": 0.2434,
+    "hashed_r10": 0.414,
+    "real_mrr": 0.26,
+    "real_r10": 0.446
+  }
+}

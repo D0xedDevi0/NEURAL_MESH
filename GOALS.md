@@ -50,16 +50,18 @@ needed or requested.
 1. **Published evidence — DONE.** PR #1 was reconciled with the local
    `d0b56263` evidence commit; the merge and artifact are on `master`. Verify
    the remote SHA, report and artifact whenever reusing the numbers.
-2. **Retrieval diagnosis — audit DONE; experiment NOT RUN.** The 108 paired
-   discordant cases were reconstructed from full top-10 contexts and inspected.
-   The real top three in 74 hashed-only cases skew toward assistant-authored
-   text; literal gold presence alone does not explain the gap. The judge also
-   contradicts itself on identical answers, particularly abstentions. First
-   specify a query-aware real+hashed candidate mix with session diversity and
-   a role-aware control; test retrieval/prompt-visible support on fixed IDs,
-   then perform a separately costed, repeated e2e run. Do not change production
-   retrieval or assert a quality gain before controls. See the paired audit in
-   `docs/longmemeval-real10-e2e-report.md`.
+2. **Retrieval diagnosis — DONE (audit + controlled experiment).** The 108
+   paired discordant cases were reconstructed from full top-10 contexts and
+   inspected; the real top three in 74 hashed-only cases skew toward
+   assistant-authored text and the judge contradicts itself on identical
+   answers, particularly abstentions. The approved bounded experiment then
+   tested a real+hashed RRF fusion with session-diversity and role-aware
+   controls offline (no LLM): fusion never beats real@10 on lexical retrieval
+   proxies and actively dilutes multi-session recall. **Decision: no retrieval
+   change and no repeated e2e inference run** — the signal does not justify it.
+   See the paired audit and fusion ablation in
+   `docs/longmemeval-real10-e2e-report.md` (artifact
+   `bench/results/fusion_ablation_retrieval.json`).
 3. **Versioned-truth workload benchmark — NOT RUN.** Extend the existing
    three synthetic pillars with reproducible *multi-turn, multi-owner* workloads:
    successive corrections with as-of queries; duplicate/Sybil corroboration

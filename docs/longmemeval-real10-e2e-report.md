@@ -67,16 +67,40 @@ the scores would be real 0.452 vs hashed 0.520, still a **−0.068 gap**.
 The official, unmodified files remain 0.422 and 0.502. The `_abs` suffix is
 a dataset identifier convention, not a universal abstention classifier.
 
-**Next controlled experiment (not yet run):** compare a query-aware mix of
-real dense and lexical/hashed candidates, retaining per-session evidence
-diversity, against both original baselines on the same question IDs. Pin the
-answerer/judge and pre-register the scoring rule; re-judge identical candidate
-answers or apply a deterministic, documented abstention rubric before claiming
-small deltas. Run a role-aware control (do not globally drop assistant nodes:
-`single-session-assistant` questions require them). First measure recall and
-prompt-visible answerability on the discordant cases without any new judge
-calls; only then justify an e2e inference run. No product retrieval behavior
-should change from this audit alone.
+**Controlled experiment — retrieval-only fusion ablation (run 2026-10-13, no LLM):**
+the approved bounded experiment was to test a real+hashed candidate mix and only
+escalate to repeated e2e inference if retrieval support measurably improved.
+Implemented offline in `bench/retrieval_mix_ablation.py` and
+`bench/fusion_ablation_offline.py` (contract tests in
+`tests/test_retrieval_mix_ablation.py`). Per case, `dense`@20 candidates were
+rebuilt from both embedders and fused by reciprocal-rank fusion (RRF k=60),
+with two controls: an at-most-two-per-session diversity cap and a user-role
+preference. Ranking never sees gold answers, question types, or source sessions.
+The deterministic lexical gold-presence proxies were measured on the fused top-10
+and compared to real@10 and hashed@10.
+
+| Variant | contextRecall@10 (lexical) | MRR (lexical) |
+|---|---:|---:|
+| real dense@10 | 0.446 | 0.2600 |
+| hashed dense@10 | 0.414 | 0.2434 |
+| RRF fused | 0.424 | 0.2598 |
+| RRF + session cap 2 | 0.430 | 0.2624 |
+| RRF + user-role prefer | 0.422 | 0.2413 |
+
+**Result: no retrieval gain.** Fusing real with hashed never beats real@10 on
+either lexical proxy, and the user-role preference is the worst variant. The
+session cap is the only variant that changes multi-session recall (0.2406 →
+0.2632) but it remains far below real@10's 0.3459 there. Dilution is confirmed,
+not hypothetical: on multi-session cases where real@10 contains the gold, RRF
+drops it from the top-10 (e.g. gold at real rank 1 demoted by hashed noise;
+four such cases diagnosed with `bench/fusion_dilution_diag.py`). Mixing the two
+rankers is strictly worse than the better single ranker on this corpus.
+
+**Decision:** the retrieval signal does not justify escalating to repeated e2e
+inference runs. No product retrieval change follows from this work. The gap
+between real and hashed e2e quality (0.422 vs 0.502) stands as-is, with the
+judge-noise and single-run caveats above. Result artifact:
+`bench/results/fusion_ablation_retrieval.json`.
 
 To reproduce in a memory-sufficient environment with `fastembed` and Nous inference already configured:
 
