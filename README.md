@@ -722,8 +722,10 @@ reformatted times, long preference gold answers). To match how the LongMemEval
 literature actually grades (LLM-judged semantic equivalence), we added an
 **end-to-end judge**: generate a full answer from retrieved context, then a
 `gpt-4o` judge scores semantic equivalence vs gold (YES/NO). Answerer + judge
-are both `gpt-4o`, the same model the published leaderboard numbers use, so the
-result is directly comparable.
+are both `gpt-4o`. This is an experimental end-to-end score for **this** flat
+per-message ingestion and retrieval pipeline, not a leaderboard-equivalent
+submission; the published full-context and sliding-window scores are context,
+not controlled baselines.
 
 ```text
 LONG-MEM-EVAL END-TO-END (500 cases, openai/gpt-4o answer + gpt-4o judge)
@@ -734,7 +736,7 @@ LONG-MEM-EVAL END-TO-END (500 cases, openai/gpt-4o answer + gpt-4o judge)
   dense  @20                0.526    noise-adjacent (+0.024)
   resonance @10             0.510    retrieval == dense (see finding 3)
   hybrid  @10               0.506    retrieval == dense (see finding 3)
-  real bge-small @10        (running)
+  real bge-small @10        0.422    below hashed @10 by 0.080 (40/500)
 
   reference: gpt-4o full-context 0.640 · naive sliding window 0.571
 
@@ -771,6 +773,15 @@ LONG-MEM-EVAL END-TO-END (500 cases, openai/gpt-4o answer + gpt-4o judge)
 5. **`single-session-preference` stays structurally dead** (~0.10 even with
    gpt-4o): the gold is a long "the user would prefer…" that a single retrieved
    node cannot synthesize.
+6. **The full-500 real-embedder @10 run did not improve e2e quality.** It scored
+   **0.422** versus hashed @10 **0.502**. Its lexical substring contextRecall@10
+   rose 0.414 → 0.446, but that proxy is not semantic answer support: real
+   answers returned `UNKNOWN` 256 times versus 203 with hashed retrieval.
+   Paired cases: 177 both correct, 215 neither, 34 real-only, 74 hashed-only.
+   This is one run per configuration, with a nondeterministic judge; the
+   0.080 gap is larger than the previously observed ±0.03 judge variability,
+   but replication is needed for a distributional claim. See
+   `docs/longmemeval-real10-e2e-report.md` for categories and provenance.
 
 *Harness fixes shipped alongside:* `contextRecall@k` was precision (`hits/k`,
 non-monotonic — the old `@5 < @1` artifact) and is now a proper monotonic
@@ -778,6 +789,7 @@ recall; the answerer/judge context window now follows `--top_k` instead of a
 hard `[:5]` cap.
 
 > Reproduce: `PYTHONPATH=. .venv-server/bin/python bench/longmemeval_harness.py --judge-e2e --judge-backend nous --mode dense --top_k 10 --output bench/results/longmemeval_e2e_gpt4o_topk10.json`
+> Real-embedder @10: add `--embedder real --resume --output bench/results/longmemeval_e2e_gpt4o_real10.json` (with `fastembed` installed). The real result was run in an isolated VPS environment with checkpoint/resume, not on the constrained Hermes host.
 
 ### Associative recall — where resonance *wins* ✅ (and where it doesn't)
 

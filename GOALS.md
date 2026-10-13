@@ -285,7 +285,7 @@ LONG-MEM-EVAL E2E (500, gpt-4o answer + gpt-4o judge)   reference
   dense @20  0.526   noise-adjacent (+0.024)
   resonance@10 0.510  retrieval == dense (500/500 identical)
   hybrid@10   0.506  retrieval == dense (500/500 identical)
-  real bge-small@10  (RUNNING, ~23h)
+  real bge-small@10  0.422 (500/500, below hashed @10 by 0.080)
 ```
 
 **Honest findings:**
@@ -298,6 +298,10 @@ LONG-MEM-EVAL E2E (500, gpt-4o answer + gpt-4o judge)   reference
    flat per-message ingestion builds no link topology.
 4. preference stays ~0.10 even with gpt-4o (long-paraphrase gold, unsynthesizable
    from one node).
+5. Full-500 real bge-small @10 e2e produced 0.422 versus hashed 0.502:
+   lexical substring recall improved 0.414 → 0.446, yet answers regressed by
+   40/500. Real-only wins 34; hashed-only wins 74. No real-embedder gain claim.
+   Full paired/category evidence: `docs/longmemeval-real10-e2e-report.md`.
 
 *Harness fixes:* `contextRecall@k` was precision (non-monotonic `@5<@1`) →
 proper monotonic recall; answerer/judge window now follows `--top_k` (was hard
