@@ -1,8 +1,9 @@
 # NEURAL_MESH — Goals & Next Stages
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
-> Repo: `BasedNUKEM/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-10-03 · Current shipped: **v0.38.0**
+> Repo: `D0xedDevi0/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
+> Last updated: 2026-10-13 · Source package: **v0.39.0** · Production `/health`: **v0.38.0**, status `ok`, Rust resonance
+> The dated stages below are historical records. The **Current priorities** section is the active worklist.
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
 purpose: every stage starts from the *outcome* we want to prove, then lists the
@@ -23,47 +24,85 @@ memory contexts.
 
 ---
 
-## Baseline (where we actually are — 2026-08-14)
+## Baseline (current, 2026-10-13)
 
-🟦 **Shipped:** v0.27.0 (memory-poisoning defense, OWASP ASI06), v0.26.0
-(echo-chamber guard), v0.25.x (brain visual health), v0.21.0 (Rust resonance,
-abi3), v0.20.0 (unified lifecycle), v0.18.0 (cross-agent `.mesh` + package).
+🟦 **Shipped:** v0.38.0 in production; repository package reports v0.39.0. L10
+Meta, L12 Exchange, L13 Consensus and L14 Curriculum are implemented; the
+three-pillar `bench/versioned_truth_bench.py` currently passes 3/3 wins and 3/3
+controls. The benchmark is structural and synthetic, **not** a live service
+quality score.
 
-🟦 **Live prod:** 580 nodes · `resonance_backend=rust` · Helixa signer
-`degraded:false` (address `0x789B…`) · all public endpoints 200.
+🟦 **Live prod:** `/health` returns status `ok`, version `0.38.0`, Rust resonance.
+Do not use an older node count as a current health metric.
 
-🟦 **Honest numbers on record:**
-- Versioning / no-stale-truth: **100% current top-1 vs 16.7% flat** (zero stale leakage).
-- Dense recall surfaces answer context ~59% more often than lexical (0.176 vs 0.110 ctxR@5).
-- Resonance is ~5× *worse* than dense on direct QA (0.037 vs 0.176) — expected, it's for associative recall, not fact lookup.
-- LongMemEval (hashed, dense, top_k=5): ctxR@1=0.070, ctxR@5=0.066, MRR=0.112 — **artifact numbers** (lexical substring on a bag-of-words embedder).
+🟦 **LongMemEval:** complete, published 500-case flat-harness end-to-end
+comparison: hashed dense@10 **0.502** vs real bge-small dense@10 **0.422**.
+Lexical substring `contextRecall@10` improves 0.414 → 0.446 but end-to-end
+answers regress. Paired case counts: 177 both correct, 215 neither, 34 real-only,
+74 hashed-only. One run each, GPT-4o judge nondeterminism; **not** a leaderboard
+submission or a test of versioning/consensus. See
+`docs/longmemeval-real10-e2e-report.md` and the versioned JSON artifacts.
+Nous inference is the supported path; **no OpenRouter funding/key action** is
+needed or requested.
 
-🟦 **Known gaps this doc closes:**
-1. The README's own thesis — *"dense vectors should pull ahead with an LLM judge"* — is still **unproven** (roadmap checkbox unchecked).
-2. Subgraph completeness under context budgets is "next on the roadmap" but has no published numbers.
-3. The Rust accelerator covers query scoring + spread only; **BM25 / full-text** is the identified next hot path.
-4. **LLM funding gate (verified 2026-08-14):** the OpenRouter account has exhausted its grant — `total_usage $10.20` > `total_credits $10.00` (`GET /v1/credits`). Every real answer/judge call 402s (`Payment Required`) even though the key is valid and both `deepseek/deepseek-chat` + `deepseek/deepseek-chat-v3-0324` slugs return 200 on a trivial probe. Goals 1 + 5 (and the VPS `muse=llm`) are **blocked on a ~$10 top-up**, not on code.
-5. The **live** `OPENROUTER_API_KEY` is in `/opt/data/.env.d0xeddev_populated` (73 chars, `sk-or-v1-…`). The copies in `D0XEDDEV/.env` + `plugins/D0xeddev/.env` are **stale/truncated** (9–10 chars) and will 401. VPS mirror: `/root/.hermes/docker-data/.env`.
+## Current priorities
+
+1. **Published evidence — DONE.** PR #1 was reconciled with the local
+   `d0b56263` evidence commit; the merge and artifact are on `master`. Verify
+   the remote SHA, report and artifact whenever reusing the numbers.
+2. **Retrieval diagnosis — audit DONE; experiment NOT RUN.** The 108 paired
+   discordant cases were reconstructed from full top-10 contexts and inspected.
+   The real top three in 74 hashed-only cases skew toward assistant-authored
+   text; literal gold presence alone does not explain the gap. The judge also
+   contradicts itself on identical answers, particularly abstentions. First
+   specify a query-aware real+hashed candidate mix with session diversity and
+   a role-aware control; test retrieval/prompt-visible support on fixed IDs,
+   then perform a separately costed, repeated e2e run. Do not change production
+   retrieval or assert a quality gain before controls. See the paired audit in
+   `docs/longmemeval-real10-e2e-report.md`.
+3. **Versioned-truth workload benchmark — NOT RUN.** Extend the existing
+   three synthetic pillars with reproducible *multi-turn, multi-owner* workloads:
+   successive corrections with as-of queries; duplicate/Sybil corroboration
+   and deadlock controls; and tampered versus valid exchange artifacts. Compare
+   against a flat append-only control under identical inputs. Require distinct
+   owner weights, explicit `DEADLOCK` when unsupported, negative controls,
+   published fixture/seed, per-case assertions, and rerunnable JSON evidence.
+   Preserve fail-closed production behavior; no new product logic is implied.
+4. **Release boundary — NOT PLANNED.** Source package v0.39.0 and production
+   v0.38.0 are distinct. A production upgrade needs its own compatibility,
+   security, health, rollback, and deployment gate; a benchmark push is not a
+   deployment.
+
+## Historical baseline (2026-08-14; retained for provenance, not instructions)
+
+🟦 Prior observations: v0.27.0 memory-poisoning defense, v0.26.0 echo-chamber
+guard, v0.21.0 Rust resonance, and v0.18.0 exchange package. The old 580-node
+health snapshot and lexical top-k=5 metrics are superseded by current checks.
+The earlier OpenRouter funding/credential notes are obsolete; do not seek or
+expose those credentials.
 
 ---
 
 ## Goal 1 — Prove dense retrieval wins end-to-end (LLM-judged LoCoMo QA)
 
-**Outcome:** publish a defensible, reproduced number showing dense retrieval
-beats lexical *when retrieved context is fed to a generative judge* — the exact
-claim the README has promised since v0.14.0.
+**Historical Goal 1 (superseded):** earlier LoCoMo subset work is recorded
+below. It must not be read as a pending OpenRouter funding request or evidence
+that real embeddings win: the later full-500 LongMemEval e2e real-vs-hashed
+comparison is in the current baseline and reports a regression.
 
-**Why this is the #1 next stage:** it is the only unchecked non-GO-gated roadmap
-item, it closes the single biggest "honest-but-unproven" gap, and the entire
-stack is already wired (`neural_mesh/eval.py → QAJudge + run_qa_eval`,
-`neural_mesh/reader_llm.py → LLMReader`, `bench/locomo_llm_judge.py`). The only
-missing piece is *actually running it and publishing numbers*.
+**Outcome originally proposed:** publish a defensible, reproduced end-to-end
+number for dense versus lexical retrieval. The original hypothesis that dense
+must win was not guaranteed and is not a release criterion.
+
+**Historical rationale (not current priority):** this was the first unchecked
+non-GO-gated roadmap item. The LoCoMo path was wired through
+`neural_mesh/eval.py → QAJudge + run_qa_eval`, `neural_mesh/reader_llm.py →
+LLMReader`, and `bench/locomo_llm_judge.py`. Current work and acceptance
+criteria appear above; do not follow old funding instructions.
 
 ### Deliverables
-🟦 Step 0 — top up the OpenRouter account (usage already exceeds the $10 grant),
-refresh the live key from `.env.d0xeddev_populated`, and pin a **currently-working**
-model slug (verify with `scripts/llm_probe.py` before the run — `deepseek/deepseek-chat`
-and `deepseek/deepseek-chat-v3-0324` are both valid, but the account is out of credit).
+🟦 Historical Step 0 (obsolete) — the earlier OpenRouter plan was replaced by
+Nous inference. No OpenRouter key, credit purchase, or funding action is needed.
 🟦 Run the E2E harness over a real LoCoMo subset (start 100 queries, scale to full 1542).
 🟦 Produce a comparison table: dense vs lexical vs hybrid vs resonance, scored by LLM judge.
 🟦 Report EM/F1 with the LLM judge AND the extractive baseline so the improvement is visible.
@@ -273,9 +312,10 @@ Repository result: `bench/results/longmemeval_judged_v038_flash_real.json`.
 ### END-TO-END SEMANTIC JUDGE + RETRIEVAL ABLATION (2026-10-05)
 
 Built `--judge-e2e` (generate answer from retrieved context → GPT-4o semantic
-judge vs gold) to convert the exact-match floor into a leaderboard-comparable
-number, then ablated retrieval levers. A **gpt-4o judge flipped 18/500 cases on
-identical input → ±0.03 noise floor**, which reframes every small delta.
+judge vs gold) to measure the flat harness end-to-end, **not** to produce a
+leaderboard-comparable full-context or sliding-window score. A **GPT-4o judge
+flipped 18/500 cases on identical input → ~±0.03 observed noise floor**, which
+reframes every small delta.
 
 ```text
 LONG-MEM-EVAL E2E (500, gpt-4o answer + gpt-4o judge)   reference
@@ -806,7 +846,7 @@ stats, ERC-8004 manifest). After bumping, `grep -rn '"0\.' neural_mesh/__init__.
 must show exactly 4 matches, all the new version.
 
 ### Git conventions
-🟦 Repo is `BasedNUKEM` (never the `D0xedDev` org).
+🟦 Repo owner is `D0xedDevi0`; verify against the configured `origin` before push.
 🟦 Commit author `Devio <basednukem@users.noreply.github.com>`.
 🟦 Tag + push every shipped milestone.
 
@@ -814,31 +854,30 @@ must show exactly 4 matches, all the new version.
 
 ## Priority order & dependencies
 
-| # | Goal | Blocked by | Irreversible? | Status |
-|---|------|-----------|---------------|--------|
-| 1 | E2E LLM-judged LoCoMo QA | none (Nous portal path) | no | 🟦 DONE (v0.27.x, Nous model path) |
-| 2 | Subgraph completeness | none | no | 🟦 DONE (v0.28.0) |
-| 3 | Rust BM25 | none | no | 🟦 DONE (v0.28.0) |
-| 4 | Helixa on-chain attestation | **human GO** | **yes** | 🟦 DONE (agentId 63912) |
-| 5 | LongMemEval re-score | none (Nous judge path) | no | 🟦 DONE (v0.38.0, full-500 judged) |
+### Historical completion index (superseded by Current priorities above)
 
-**Recommended execution order:** 1 → 2 → 3 (all non-irreversible, bundle in
-parallel), then 5, then pause for GO on 4. Verify every irreversibility
-on-chain before broadcasting.
+| Goal | Historical state |
+|---|---|
+| LoCoMo subset QA | Completed subset only; not a full 1542-case claim |
+| Subgraph completeness and Rust BM25 | Shipped |
+| Helixa attestation | Completed historical agentId 63912; any new on-chain action requires human GO |
+| LongMemEval | Full 500-case answer/judge results published; real dense@10 regressed in the flat harness |
+
+Future work is the retrieval experiment and workload-strengthened versioned-truth
+benchmark under **Current priorities**, not another OpenRouter funding request.
 
 ---
 
 ## Risk register
 
-🟦 **Model-slug drift:** OpenRouter deprecates free slugs and some hosted slugs
-return empty content. Always `scripts/llm_probe.py` before a judge run.
-🟦 **Funding / 402 gate:** the OpenRouter account is over its grant (`usage $10.20 >
-credits $10.00`). Real answer/judge calls return 402 even with a valid key + slug.
-Top up before any LLM-dependent goal; verify with `GET /v1/credits` first.
-🟦 **Key rot:** local `D0XEDDEV/.env` + `plugins/D0xeddev/.env` carry truncated
-9–10-char keys (401). The live key is `.env.d0xeddev_populated` (73 chars) or the
-VPS parent env; never commit it.
+🟦 **Model availability:** verify the configured Nous inference model with a
+redacted probe before any new answer/judge run; do not log credential values.
+🟦 **Judge stability:** GPT-4o verdicts can flip on identical input, including
+`UNKNOWN` abstentions. Pin prompts/model, pre-register normalization, keep raw
+outputs, and rerun before treating small metric differences as significant.
+🟦 **Release boundary:** benchmark results in Git are not deployment evidence;
+check the production `/health` version and fail-closed behavior separately.
 🟦 **Restarts lie:** a stale PID serves old bytecode. Always `curl /health` for
 the expected version after restart.
-🟦 **Disk:** `/opt/data` can hit 100%; `df -h` before write-heavy ops, purge
-`*.log.[2-9]` / `git gc` / `pip cache purge` if low.
+🟦 **Disk:** `/opt/data` can fill; inspect live process/open-file usage and
+recovery costs before any targeted cache or log cleanup.

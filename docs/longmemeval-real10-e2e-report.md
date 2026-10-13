@@ -35,6 +35,49 @@ Lexical substring recall is a diagnostic, not semantic answerability. It rose fo
 
 **Verdict:** this real-embedder configuration did **not** beat the hashed dense@10 baseline on end-to-end answers. Do not convert the lexical recall gain into a semantic improvement claim. This does not negate NEURAL_MESH's separate versioning/consensus benchmark; flat LongMemEval does not exercise those capabilities.
 
+## Paired-failure audit (read-only, 2026-10-13)
+
+The result JSON stores only the first 120 characters of the first three retrieved
+nodes; it does **not** preserve the full top-10 context passed to GPT-4o (up to
+800 characters per node). To avoid mistaking snippets for the answerer's input,
+the 108 discordant cases were re-ingested on the isolated VPS with the same
+oracle, `RealEmbedder`/hashed functions and `dense`@10 flags. In all 216
+reconstructions, the stored top-3 snippets matched byte-for-byte.
+
+🟦 **74 hashed-only wins:** the literal gold string appeared in the full top-10
+context in 24 hashed and 25 real runs; after the 800-character prompt cap it
+appeared in 24 each. The large score gap is **not explained by a literal-gold
+retrieval-miss count**. Among these cases, the real top three contained 77
+assistant-authored nodes versus 23 for hashed (222 slots each). This is a
+conditional pattern, not proof that assistant text is wrong or a dataset-wide
+role effect; 29 of the 74 losses were multi-session questions.
+
+🟦 **34 real-only wins:** literal gold was in the full top-10 in 13 real versus
+8 hashed contexts, and in the answerer's capped context in 11 real versus 8
+hashed. This is a real retrieval advantage on some cases, even while the
+aggregate end-to-end score declines.
+
+🟦 **Judge inconsistency:** 7 of the 108 discordant cases had identical
+candidate answers but opposite YES/NO verdicts; in 6 of those both candidates
+were `UNKNOWN` for abstention-style references. Across the 30 `_abs` cases,
+real returned `UNKNOWN` 28 times (15 judged NO); hashed returned it 25 times
+(9 judged NO). If, solely as a sensitivity calculation, the 24 abstention
+`UNKNOWN`/NO verdicts were made YES while leaving every other verdict fixed,
+the scores would be real 0.452 vs hashed 0.520, still a **−0.068 gap**.
+The official, unmodified files remain 0.422 and 0.502. The `_abs` suffix is
+a dataset identifier convention, not a universal abstention classifier.
+
+**Next controlled experiment (not yet run):** compare a query-aware mix of
+real dense and lexical/hashed candidates, retaining per-session evidence
+diversity, against both original baselines on the same question IDs. Pin the
+answerer/judge and pre-register the scoring rule; re-judge identical candidate
+answers or apply a deterministic, documented abstention rubric before claiming
+small deltas. Run a role-aware control (do not globally drop assistant nodes:
+`single-session-assistant` questions require them). First measure recall and
+prompt-visible answerability on the discordant cases without any new judge
+calls; only then justify an e2e inference run. No product retrieval behavior
+should change from this audit alone.
+
 To reproduce in a memory-sufficient environment with `fastembed` and Nous inference already configured:
 
 ```bash
