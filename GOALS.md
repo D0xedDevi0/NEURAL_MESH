@@ -62,18 +62,19 @@ needed or requested.
    See the paired audit and fusion ablation in
    `docs/longmemeval-real10-e2e-report.md` (artifact
    `bench/results/fusion_ablation_retrieval.json`).
-3. **Versioned-truth workload benchmark — NOT RUN.** Extend the existing
-   three synthetic pillars with reproducible *multi-turn, multi-owner* workloads:
-   successive corrections with as-of queries; duplicate/Sybil corroboration
-   and deadlock controls; and tampered versus valid exchange artifacts. Compare
-   against a flat append-only control under identical inputs. Require distinct
-   owner weights, explicit `DEADLOCK` when unsupported, negative controls,
-   published fixture/seed, per-case assertions, and rerunnable JSON evidence.
-   Preserve fail-closed production behavior; no new product logic is implied.
-4. **Release boundary — NOT PLANNED.** Source package v0.39.0 and production
-   v0.38.0 are distinct. A production upgrade needs its own compatibility,
-   security, health, rollback, and deployment gate; a benchmark push is not a
-   deployment.
+3. **Versioned-truth workload benchmark — DONE (synthetic v1).** The fixed
+   28-case, four-timeline workload covers successive corrections/as-of queries,
+   distinct-owner consensus under duplicate/Sybil votes and deadlock, and valid,
+   tampered, or intact-but-unsafe exchange artifacts. NEURAL_MESH passed 28/28;
+   the specified naive append-only baseline passed 20/28, including all 16/16
+   timestamped as-of queries (a tie, not a structural win). All per-case
+   controls passed. The self-hash is not an authenticated signature; this is
+   neither production traffic nor semantic QA. See
+   `docs/versioned-truth-workload-v1.md`, fixture, tests, and
+   `bench/results/versioned_truth_workload_v1.json`.
+4. **Release boundary — IN GATE.** Source v0.39.0 and production v0.38.0 remain
+   distinct until a production upgrade passes compatibility, security, health,
+   rollback, and deployment checks. A benchmark push is not deployment.
 
 ## Historical baseline (2026-08-14; retained for provenance, not instructions)
 
