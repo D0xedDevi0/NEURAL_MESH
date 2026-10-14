@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `D0xedDevi0/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-10-13 · Source package: **v0.39.0** · Production `/health`: **v0.38.0**, status `ok`, Rust resonance
+> Last updated: 2026-10-14 · Source package: **v0.39.0** · Production `/health`: **v0.39.0**, status `ok`, Rust resonance
 > The dated stages below are historical records. The **Current priorities** section is the active worklist.
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
@@ -24,16 +24,18 @@ memory contexts.
 
 ---
 
-## Baseline (current, 2026-10-13)
+## Baseline (current, 2026-10-14)
 
-🟦 **Shipped:** v0.38.0 in production; repository package reports v0.39.0. L10
+🟦 **Shipped:** v0.39.0 in production at release tag `v0.39.0` (commit
+`e9c6b828`); both package and server report 0.39.0. L10
 Meta, L12 Exchange, L13 Consensus and L14 Curriculum are implemented; the
 three-pillar `bench/versioned_truth_bench.py` currently passes 3/3 wins and 3/3
 controls. The benchmark is structural and synthetic, **not** a live service
 quality score.
 
-🟦 **Live prod:** `/health` returns status `ok`, version `0.38.0`, Rust resonance.
-Do not use an older node count as a current health metric.
+🟦 **Live prod:** `/health` returns status `ok`, version `0.39.0`, Rust resonance
+and 2,480 nodes at the deployment check. Treat that count as a snapshot, not a
+permanent health metric.
 
 🟦 **LongMemEval:** complete, published 500-case flat-harness end-to-end
 comparison: hashed dense@10 **0.502** vs real bge-small dense@10 **0.422**.
@@ -72,9 +74,15 @@ needed or requested.
    neither production traffic nor semantic QA. See
    `docs/versioned-truth-workload-v1.md`, fixture, tests, and
    `bench/results/versioned_truth_workload_v1.json`.
-4. **Release boundary — IN GATE.** Source v0.39.0 and production v0.38.0 remain
-   distinct until a production upgrade passes compatibility, security, health,
-   rollback, and deployment checks. A benchmark push is not deployment.
+4. **Release boundary — DONE (v0.39.0).** Package metadata and CLI were
+   aligned to 0.39.0. Full pytest passed (388 passed, 12 skipped, 8 subtests),
+   a clean no-deps install matched the package version, local isolated API
+   health/auth checks passed, and push security gates passed. Before VPS
+   fast-forward, an SQLite online backup passed integrity/hash verification
+   (2,480 nodes). The public `/health`, both manifests, unauthorized-write
+   rejection, unchanged node count, and VPS repository HEAD were independently
+   checked after restart. See `docs/v039-release-verification.md`. This validates
+   this release, not future deploys.
 
 ## Historical baseline (2026-08-14; retained for provenance, not instructions)
 
@@ -866,8 +874,9 @@ must show exactly 4 matches, all the new version.
 | Helixa attestation | Completed historical agentId 63912; any new on-chain action requires human GO |
 | LongMemEval | Full 500-case answer/judge results published; real dense@10 regressed in the flat harness |
 
-Future work is the retrieval experiment and workload-strengthened versioned-truth
-benchmark under **Current priorities**, not another OpenRouter funding request.
+Retrieval diagnosis and the synthetic versioned-truth workload are complete
+under **Current priorities**. Future semantic retrieval or authentication work
+needs its own bounded gate; no OpenRouter funding request is pending.
 
 ---
 
