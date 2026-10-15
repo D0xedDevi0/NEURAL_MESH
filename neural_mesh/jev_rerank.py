@@ -262,10 +262,6 @@ def run_cli(args):
             os.fsync(stream.fileno())
     except BaseException:
         try:
-            os.close(fd)
-        except OSError:
-            pass
-        try:
             os.unlink(out)
         except OSError:
             pass
