@@ -18,6 +18,8 @@ import re
 MAX_EXCERPT = 512
 MAX_QUERY = 1024
 MAX_CANDIDATES = 6
+_PROOF_BOUND = 128
+_CHOICE_PREFIX = 'inspect:'
 _ID = re.compile(r'[A-Za-z0-9_-]{1,64}')
 _LANE = re.compile(r'[A-Za-z0-9_-]{1,32}')
 # Secret-shaped VALUES (not identifier substrings): URLs, emails, 32+ alnum runs,
@@ -27,11 +29,13 @@ _SECRET = re.compile(
     r'private[ _-]?key|gh[pousr]_|sk[-_][A-Za-z0-9]|AKIA|BEGIN [A-Z ]*PRIVATE KEY',
     re.I,
 )
-_PROOF_KEYS = {
+# Public proof fields that are safe to project and relevant to a first-inspection
+# relevance judgment. URL-shaped fields (url/source/full tx) are intentionally
+# excluded: they collide with the secret filter and are not needed for relevance.
+_PROOF_KEYS = (
     'proof_type', 'claim', 'trust', 'by', 'provenance', 'network', 'chain_id',
-    'tx', 'tx_short', 'term_id', 'term_id_short', 'block', 'url',
-    'agent_id', 'aura_score', 'verified', 'source',
-}
+    'tx_short', 'term_id_short', 'block', 'agent_id', 'aura_score', 'verified',
+)
 
 
 def _printable(text: str, limit: int) -> bool:
@@ -62,11 +66,16 @@ def _proof_fields(proof) -> dict | None:
         value = proof.get(key)
         if value is None:
             continue
-        if isinstance(value, (str, int, float)):
-            if isinstance(value, str):
-                if not _bounded(value, 256):
-                    continue
-            elif isinstance(value, float) and (value != value or value in (float('inf'), float('-inf'))):
+        if isinstance(value, str):
+            if not _bounded(value, _PROOF_BOUND):
+                continue
+            out[key] = value
+        elif isinstance(value, bool):
+            out[key] = value
+        elif isinstance(value, int):
+            out[key] = value
+        elif isinstance(value, float):
+            if value != value or value in (float('inf'), float('-inf')):
                 continue
             out[key] = value
     return out or None
@@ -104,9 +113,10 @@ def project_recall(results, query: str) -> dict:
         excerpt, content_withheld = _safe_excerpt(card.get('content'))
         if content_withheld:
             withheld += 1
+        raw_type = card.get('type')
         entry = {
             'id': node_id,
-            'type': _bounded(str(card.get('type', '')), 64) or None,
+            'type': _bounded(raw_type, 64) if isinstance(raw_type, str) else None,
             'trust': trust,
             'provenance': _bounded(card.get('provenance'), 256),
             'lane': lane if isinstance(lane, str) and _LANE.fullmatch(lane) else None,
@@ -128,9 +138,9 @@ def project_recall(results, query: str) -> dict:
         'candidates': candidates,
         'candidate_count': len(candidates),
         'withheld_content': withheld,
+        'omitted_candidates': len(results) - len(candidates),
         'source_fingerprint': hashlib.sha256(
-            json.dumps(results if isinstance(results, list) else results.get('results', []),
-                       sort_keys=True, default=str).encode()
+            json.dumps(candidates, sort_keys=True, allow_nan=False).encode()
         ).hexdigest(),
     }
 
@@ -138,12 +148,13 @@ def project_recall(results, query: str) -> dict:
 def validate_origin(url: str) -> str:
     import ipaddress
     from urllib.parse import urlsplit
-    if not isinstance(url, str) or len(url) > 2048 or any(ord(c) < 33 or ord(c) > 126 for c in url):
+    if not isinstance(url, str) or len(url) > 2048 or any(c.isspace() for c in url):
         raise ValueError('public_source_url')
     try:
         p = urlsplit(url)
         host = p.hostname
-        if p.scheme not in ('http', 'https') or not host or p.username or p.password or p.query or p.fragment:
+        if (p.scheme not in ('http', 'https') or not host or p.username or p.password
+                or p.query or p.fragment or p.port not in (None, 80 if p.scheme == 'http' else 443)):
             raise ValueError('public_source_url')
         if host.lower().rstrip('.') == 'localhost' or host.lower().rstrip('.').endswith('.localhost'):
             raise ValueError('public_source_url')
@@ -210,14 +221,14 @@ def rerank(results, query: str, *, allow_model_input: bool = False, offline: boo
                          'Directly useful to inspect first'],
         }
     criteria = {'none': 'No candidate is sufficiently supported as a useful first inspection'}
-    criteria.update({r['id']: 'Inspect candidate ' + r['id'] + ' first' for r in rows})
+    criteria.update({_CHOICE_PREFIX + r['id']: 'Inspect candidate ' + r['id'] + ' first' for r in rows})
     questions['first'] = {
         'type': 'choice',
         'description': 'Choose one supported candidate to inspect first, or none. Do not authorize an action or assert truth.',
         'criteria': criteria,
     }
     provenance = Provenance(source_url, source_url, projection['source_fingerprint'], True,
-                            tuple(rows), projection['withheld_content'])
+                            tuple(rows), projection['omitted_candidates'])
     state = {
         'task': 'Review-only re-ranking of already-retrieved private-memory candidates; no truth or action authority.',
         'data_not_instruction': True,
@@ -230,8 +241,10 @@ def rerank(results, query: str, *, allow_model_input: bool = False, offline: boo
     result['decision'] = receipt
     if receipt.get('outcome') == 'ok':
         choice = receipt.get('answers', {}).get('first', {}).get('choice')
-        if choice in {r['id'] for r in rows}:
-            result['suggested_order'] = [choice]
+        if isinstance(choice, str) and choice.startswith(_CHOICE_PREFIX):
+            picked = choice[len(_CHOICE_PREFIX):]
+            if picked in {r['id'] for r in rows}:
+                result['suggested_order'] = [picked]
     return result
 
 
