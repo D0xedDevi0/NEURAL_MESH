@@ -90,7 +90,16 @@ class Mesh:
         # One connection, guarded by a re-entrant lock: the service is
         # threaded and shares this connection across requests.
         self._db_lock = threading.RLock()
-        self.db = _LockedConnection(sqlite3.connect(db_path), self._db_lock)
+        # check_same_thread=False: the connection is built on the thread that
+        # constructs the Mesh (a Hermes memory-provider init / a session thread)
+        # and used by tool calls on another. The _LockedConnection RLock already
+        # serializes every statement — that is exactly what sqlite's own thread
+        # check exists to protect — and without this flag the first cross-thread
+        # call dies with "SQLite objects created in a thread can only be used in
+        # that same thread" (server.py got the flag via attach_connection; the
+        # in-process path never did).
+        self.db = _LockedConnection(
+            sqlite3.connect(db_path, check_same_thread=False), self._db_lock)
         self.db.row_factory = sqlite3.Row
         self.embedder = embedder
         self.link_threshold = link_threshold

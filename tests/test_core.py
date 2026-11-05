@@ -10,6 +10,7 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import time
 import unittest
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1149,3 +1150,56 @@ class TestYantrikDBBridge(unittest.TestCase):
         self.assertIn("skills", s)
         self.assertGreater(s.get("total", 0), 0)
 
+
+
+class TestCrossThreadConnection(unittest.TestCase):
+    """The Mesh is built on one thread and used from another.
+
+    A Hermes memory provider constructs the Mesh during agent init and runs
+    mesh_remember / mesh_recall on a tool-executor thread; Flask's threaded dev
+    server does the same. Without check_same_thread=False on the connection
+    every such call raised ProgrammingError instead of storing anything.
+    """
+
+    def test_add_and_recall_from_another_thread(self):
+        import threading
+        path = os.path.join(tempfile.mkdtemp(), "cross_thread.db")
+        m = Mesh(path)  # built on THIS thread
+        out: dict = {}
+
+        def worker():
+            try:
+                node = m.add("the vault code is 4471", MemoryType.SEMANTIC)
+                out["id"] = node.id
+                out["hits"] = [h.content for h in m.recall("vault code", top_k=3)]
+            except Exception as exc:  # noqa: BLE001
+                out["error"] = f"{type(exc).__name__}: {exc}"
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+        self.assertNotIn("error", out, out.get("error"))
+        self.assertTrue(out["id"])
+        self.assertIn("the vault code is 4471", out["hits"])
+        # the original thread still owns a usable connection
+        self.assertEqual(len(m.recall("vault code", top_k=3)), 1)
+
+    def test_stats_and_asof_from_another_thread(self):
+        import threading
+        path = os.path.join(tempfile.mkdtemp(), "cross_thread_stats.db")
+        m = Mesh(path)
+        m.add("baseline fact about Base L2", MemoryType.SEMANTIC)
+        out: dict = {}
+
+        def worker():
+            try:
+                out["stats"] = m.stats() if hasattr(m, "stats") else None
+                out["hits"] = [h.content for h in m.recall_asof("Base L2", as_of=time.time() + 60, top_k=3)]
+            except Exception as exc:  # noqa: BLE001
+                out["error"] = f"{type(exc).__name__}: {exc}"
+
+        t = threading.Thread(target=worker)
+        t.start()
+        t.join()
+        self.assertNotIn("error", out, out.get("error"))
+        self.assertIn("baseline fact about Base L2", out["hits"])
