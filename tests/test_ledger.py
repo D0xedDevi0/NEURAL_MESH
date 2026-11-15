@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -483,3 +484,41 @@ class LedgerCase(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestAttributionIsExact(unittest.TestCase):
+    """Who asserted this? is the question the log exists to answer, so a wrong name on
+    an event is a defect in the lane itself, not cosmetic."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="ledger-attr-")
+        self.mesh = Mesh(os.path.join(self.tmp, "m.db"), validator=False)
+
+    def tearDown(self):
+        self.mesh.db.close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _events(self, node_id):
+        return [(e.op, e.agent_id) for e in self.mesh.ledger.entries(node_id=node_id)]
+
+    def test_a_locally_authored_fact_is_an_assert_not_an_import(self):
+        """An add by a named agent is that agent asserting a fact. Inferring "import"
+        from a foreign agent_id mislabelled every attributed write."""
+        n = self.mesh.add("a fact attributed to alice", agent_id="alice")
+        self.assertEqual(self._events(n.id)[-1], ("assert", "alice"))
+
+    def test_supersession_names_the_actor_not_the_old_author(self):
+        a = self.mesh.add("the treasury threshold is 2 of 3")            # author: self
+        b = self.mesh.add("the treasury threshold is 1 of 3",
+                          supersedes=a.id, agent_id="alice")             # actor: alice
+        self.assertEqual(self._events(a.id), [("assert", "self"), ("supersede", "alice")],
+                         "the correction must be attributed to whoever made it")
+        self.assertEqual(self._events(b.id)[-1], ("assert", "alice"))
+
+    def test_provenance_credits_every_agent_that_touched_the_memory(self):
+        a = self.mesh.add("the deploy key rotates every 90 days")
+        self.mesh.add("the deploy key rotates every 30 days", supersedes=a.id, agent_id="alice")
+        p = self.mesh.ledger.provenance(a.id)
+        self.assertEqual(p["authors"], ["alice", "self"])
+        self.assertEqual(p["latest_op"], "supersede")
+

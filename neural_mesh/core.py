@@ -229,7 +229,8 @@ class Mesh:
         self._node_cache = out
         return dict(out)   # never hand out the live dict: _save inserts into it
 
-    def _save(self, node: MemoryNode, op: str = "", source: str = "", force: bool = False):
+    def _save(self, node: MemoryNode, op: str = "", source: str = "",
+              force: bool = False, actor: str = ""):
         import json
         row = node.to_row()
         self.db.execute(
@@ -245,7 +246,7 @@ class Mesh:
         # deliberately not claims, so they do not grow the log.
         ledger = getattr(self, "ledger", None)
         if ledger is not None:
-            ledger.note(node, op=op, source=source, force=force)
+            ledger.note(node, op=op, source=source, force=force, actor=actor)
 
     def _touch(self, node: MemoryNode, writeback: bool = True):
         """Update access stats. `writeback=False` skips the expensive SQLite
@@ -378,7 +379,7 @@ class Mesh:
             node.links["__prospective_at__"] = prospective_at
         self._save(node, op="quarantine" if node.lane == QUARANTINE_LANE else "")
         if supersedes:
-            self._supersede(supersedes, node)
+            self._supersede(supersedes, node, actor=agent_id or by)
         if node.lane != QUARANTINE_LANE:
             self._auto_link(node)
         return node
@@ -421,9 +422,14 @@ class Mesh:
                     self._auto_link(n)
         return nodes
 
-    def _supersede(self, old_id: str, new_node: MemoryNode):
+    def _supersede(self, old_id: str, new_node: MemoryNode, actor: str = ""):
         """Versioning: old fact is soft-archived, linked to its current successor.
-        Retrieval skips superseded nodes, so flat search can't surface stale data."""
+        Retrieval skips superseded nodes, so flat search can't surface stale data.
+
+        `actor` is whoever performed the supersession. It is recorded on the event
+        because the node being superseded carries the ORIGINAL author, and a log that
+        names the wrong agent for a correction is worse than one that names none.
+        """
         self._invalidate_cache()
         old = self._load().get(old_id)
         if not old:
@@ -432,7 +438,7 @@ class Mesh:
         old.valid_to = time.time()   # bi-temporal: the old fact ceased being true NOW
         old.links["supersedes::" + new_node.id] = 1.0
         new_node.links["superseded::" + old_id] = 1.0
-        self._save(old, op="supersede", force=True)
+        self._save(old, op="supersede", force=True, actor=actor)
         self._save(new_node)
 
     def _auto_link(self, node: MemoryNode):

@@ -118,7 +118,7 @@ def merge_peer_mesh(local_mesh, peer_file: str,
                 pn.resonance = 0.0
                 pn.links = {}
                 pn.provenance = (pn.provenance or "unknown") + f"|peer-quarantined:{pn.agent_id}"
-                local_mesh._save(pn)
+                local_mesh._save(pn, op="import")
                 quarantined += 1
                 continue
 
@@ -136,13 +136,13 @@ def merge_peer_mesh(local_mesh, peer_file: str,
                 loc.agent_id = loc.agent_id + "+" + pn.agent_id
             elif not loc.agent_id:
                 loc.agent_id = pn.agent_id
-            local_mesh._save(loc)
+            local_mesh._save(loc, op="import")
             matches[0] = loc
             fused += 1
         elif policy.allow_new:
             prov = pn.provenance or "unknown"
             pn.provenance = (prov + f"|peer:{pn.agent_id}").strip("|")
-            local_mesh._save(pn)
+            local_mesh._save(pn, op="import")
             local_by_hash.setdefault(chash, []).append(pn)
             added += 1
         else:
@@ -183,6 +183,6 @@ def export_for_peer(mesh, path: str, agent_id: str) -> dict:
     for n in mesh._load().values():
         if n.agent_id in ("", "self"):
             n.agent_id = agent_id
-            mesh._save(n)
+            mesh._save(n, op="import")
     from .meshfile import export_mesh
     return export_mesh(mesh, path)

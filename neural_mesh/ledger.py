@@ -338,7 +338,7 @@ class ProvenanceLedger:
         return entry
 
     def note(self, node: Any, op: str | None = None, source: str = "",
-             force: bool = False) -> LedgerEntry | None:
+             force: bool = False, actor: str = "") -> LedgerEntry | None:
         """Witness a memory if (and only if) it is a claim the log has not seen.
 
         This is the hook every write path funnels through, which is what makes
@@ -361,12 +361,16 @@ class ProvenanceLedger:
                 self._digest_cache[node_id] = digest
                 return None
         if not op:
-            agent = _field(node, "agent_id")
-            op = "import" if agent and agent not in LOCAL_AGENTS else "assert"
+            # A write is an assertion unless the caller says otherwise. Importing is a
+            # property of the PATH, not of who wrote the memory — inferring it from a
+            # foreign agent_id mislabelled every attributed add as an import, which is
+            # exactly the attribution this log exists to get right.
+            op = "assert"
+        author = _field(node, "agent_id")
         return self.append(
-            op=op, node_id=node_id, agent_id=_field(node, "agent_id"),
+            op=op, node_id=node_id, agent_id=actor or author or "self",
             source=source or str(_field(node, "provenance") or ""), digest=digest,
-            detail={"by": _field(node, "by")})
+            detail={"by": _field(node, "by"), "author": author})
 
     # -- read ---------------------------------------------------------------
     def tail(self) -> LedgerEntry | None:
