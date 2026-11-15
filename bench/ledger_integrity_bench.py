@@ -445,8 +445,19 @@ def run_attribution_experiment(tmp: str, n_agents: int = 5, per_agent: int = 20)
     bundle = mesh.ledger.export_bundle()
     verified = ProvenanceLedger.verify_bundle(bundle)
     droplet = json.loads(json.dumps(bundle))
-    droplet["entries"][3]["agent_id"] = "agent-0"   # frame another agent
+    # Frame another agent. Pick a value that actually DIFFERS from the entry's author:
+    # assigning the author it already had is a no-op, and the "forgery" then verifies
+    # clean — which reads as "forged bundles are accepted" when nothing was forged.
+    _target = droplet["entries"][3]
+    _original_author = _target.get("agent_id") or ""
+    _forged_author = next(
+        (f"agent-{i}" for i in range(n_agents) if f"agent-{i}" != _original_author),
+        "agent-framed",
+    )
+    _target["agent_id"] = _forged_author           # frame another agent
     framed = ProvenanceLedger.verify_bundle(droplet)
+    if _original_author == _forged_author:         # cannot happen, but never fake a pass
+        raise AssertionError("forgery was a no-op: forged author equals the real one")
     _close(mesh)
     return {
         "agents": n_agents, "memories": len(truth),
@@ -454,12 +465,17 @@ def run_attribution_experiment(tmp: str, n_agents: int = 5, per_agent: int = 20)
         "head_seq": head["seq"], "bundle_verified": verified["ok"],
         "bundle_with_forged_author": framed["ok"],
         "bundle_forgery_reason": framed.get("reason", ""),
+        "forged_from": _original_author, "forged_to": _forged_author,
+        "forgery_was_a_real_change": _original_author != _forged_author,
     }
 
 
 def main() -> int:
+    """Exit codes: 0 ok, 3 the container was too noisy to measure, 4 security regression."""
     tmp = tempfile.mkdtemp(prefix="ledger-bench-")
-    results: dict = {"generated_at": time.time(), "scheme": "mesh-ledger-v1"}
+    results: dict = {"generated_at": time.time(), "scheme": "mesh-ledger-v1",
+                     "env": {"loadavg_start": list(os.getloadavg()),
+                             "cpu_count": os.cpu_count()}}
     stages = [
         ("attacks", run_attack_experiment),
         ("honest_traffic", run_false_positive_experiment),
@@ -506,6 +522,40 @@ def main() -> int:
           f"({a['attribution_accuracy']}), forged-author bundle rejected: "
           f"{not a['bundle_with_forged_author']} "
           f"({a['bundle_forgery_reason'] or 'no reason given'})")
+
+    results["env"]["loadavg_end"] = list(os.getloadavg())
+
+    # --- refuse to publish numbers the machine contradicts ---------------------
+    # A larger store cannot verify faster than a smaller one. When it appears to, the
+    # run measured container load, not the ledger — and a committed artifact carrying
+    # that number is worse than no artifact, because the next reader will cite it.
+    sc = results["scale"]
+    if len(sc) >= 2:
+        ordered = sorted(sc.items(), key=lambda kv: int(kv[0]))
+        (n_small, r_small), (n_big, r_big) = ordered[0], ordered[-1]
+        if r_big["verify_ms"] < r_small["verify_ms"]:
+            print(f"\nDEGRADED: {n_big} nodes verified faster than {n_small} "
+                  f"({r_big['verify_ms']} ms < {r_small['verify_ms']} ms), which is "
+                  f"impossible for a store that only grew (load "
+                  f"{results['env']['loadavg_end'][:1]}). The run measured the "
+                  f"container, not the ledger — refusing to write an artifact.")
+            return 3
+
+    # Adding a write to every add cannot make adds faster. A negative overhead is the
+    # signature of the sequential-arm bug that produced -4.7 %, so treat it as degraded
+    # rather than publishing a physically impossible improvement.
+    c = results["cost"]
+    if c.get("overhead_us_per_add") is not None and c["overhead_us_per_add"] < 0:
+        print(f"\nDEGRADED: ledger overhead measured as "
+              f"{c['overhead_us_per_add']} us/add, a negative cost. Recording a ledger "
+              f"write cannot speed an add up — refusing to write an artifact.")
+        return 3
+
+    attr = results["attribution"]
+    if attr.get("forgery_was_a_real_change") and attr.get("bundle_with_forged_author"):
+        print("\nSECURITY FAILURE: a bundle with a rewritten author verified OK. "
+              "A peer bundle could frame another agent and still pass verification.")
+        return 4
 
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     os.makedirs(out, exist_ok=True)

@@ -11,14 +11,14 @@
       "attack": "authorship laundered",
       "description": "agent_id moved to another agent (metadata only)",
       "ledger": true,
-      "ledger_kind": "content",
+      "ledger_kind": "attribution",
       "rowhash": false
     },
     {
       "attack": "validity rewritten",
       "description": "a live fact marked already-superseded",
       "ledger": true,
-      "ledger_kind": "content",
+      "ledger_kind": "validity",
       "rowhash": false
     },
     {
@@ -43,8 +43,15 @@
       "rowhash": false
     },
     {
-      "attack": "tail truncated (anchored)",
-      "description": "the same cut after the head was anchored",
+      "attack": "tail truncated, in-db anchor wiped",
+      "description": "the same cut by an attacker who deletes the anchor row with it",
+      "ledger": false,
+      "ledger_kind": "",
+      "rowhash": false
+    },
+    {
+      "attack": "tail truncated, anchor in an external file",
+      "description": "the same cut against an anchor pinned outside the database",
       "ledger": true,
       "ledger_kind": "anchor",
       "rowhash": false
@@ -61,45 +68,61 @@
     "agents": 5,
     "attribution_accuracy": 1.0,
     "attribution_exact": 100,
-    "bundle_forgery_reason": "chain verified",
+    "bundle_forgery_reason": "entry hash does not recompute \u2014 the bundle was edited",
     "bundle_verified": true,
-    "bundle_with_forged_author": true,
+    "bundle_with_forged_author": false,
+    "forged_from": "agent-0",
+    "forged_to": "agent-1",
+    "forgery_was_a_real_change": true,
     "head_seq": 100,
     "memories": 100
   },
   "cost": {
-    "bytes_per_entry": 477.9,
+    "bytes_per_entry": 819.2,
     "ledger_off": {
       "db_bytes": 569344,
       "ledger_entries": 0,
-      "mean_add_us": 205708.3,
-      "p95_add_us": 393195.0,
+      "mean_add_us": 1149287.2,
+      "p95_add_us": 3835144.1,
       "verify_entries_per_second": null,
       "verify_ms": null,
       "verify_ok": null,
       "verify_seconds": null
     },
     "ledger_on": {
-      "db_bytes": 626688,
+      "db_bytes": 667648,
       "ledger_entries": 120,
-      "mean_add_us": 207708.4,
-      "p95_add_us": 399643.3,
-      "verify_entries_per_second": 21995,
-      "verify_ms": 5.46,
+      "mean_add_us": 1166045.2,
+      "p95_add_us": 4157074.0,
+      "verify_entries_per_second": 1571,
+      "verify_ms": 76.41,
       "verify_ok": true,
-      "verify_seconds": 0.005456
+      "verify_seconds": 0.076408
     },
-    "overhead_pct": 1.0,
-    "overhead_us_per_add": 2000.1,
+    "overhead_pct": 1.5,
+    "overhead_us_per_add": 16758.0,
     "raw_append": {
-      "appends_per_second": 354.3,
+      "appends_per_second": 79.1,
       "entries": 2000,
-      "seconds": 5.645,
-      "us_per_append": 2822.7
+      "seconds": 25.285,
+      "us_per_append": 12642.4
     },
-    "verify_entries_per_second": 21995
+    "verify_entries_per_second": 1571
   },
-  "generated_at": 1794759148.8498778,
+  "env": {
+    "cpu_count": 4,
+    "loadavg_end": [
+      10.52001953125,
+      9.16552734375,
+      8.50732421875
+    ],
+    "loadavg_start": [
+      5.8115234375,
+      8.0146484375,
+      8.37939453125
+    ]
+  },
+  "generated_at": 1794769563.3543262,
   "honest_traffic": {
     "by_op": {
       "assert": 103,
@@ -123,20 +146,20 @@
   },
   "scale": {
     "100": {
-      "db_bytes": 479232,
+      "db_bytes": 507904,
       "entries": 100,
       "nodes": 100,
-      "nodes_per_second": 20117.8,
+      "nodes_per_second": 1543.7,
       "ok": true,
-      "verify_ms": 5.0
+      "verify_ms": 64.8
     },
     "250": {
-      "db_bytes": 2174976,
+      "db_bytes": 2248704,
       "entries": 250,
       "nodes": 250,
-      "nodes_per_second": 20435.7,
+      "nodes_per_second": 1529.0,
       "ok": true,
-      "verify_ms": 12.2
+      "verify_ms": 163.5
     }
   },
   "scheme": "mesh-ledger-v1"

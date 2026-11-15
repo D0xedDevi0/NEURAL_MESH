@@ -74,24 +74,50 @@ estimate of a difference this container cannot resolve.
 
 Read these together with one caveat: `Mesh.add` is itself O(n²) over the store (auto-linking and
 corroboration), dominating the number — at n=120 an `add` costs ~200 ms. The ledger accounts for
-about 1 % of that. The raw figure is the honest per-event price: each witnessed event is its own
+a low single-digit percentage of that (the bracket above). The raw figure is the honest per-event price: each witnessed event is its own
 committed transaction, which is what makes it durable (and what makes it ~2.8 ms).
 
 **A measurement bug worth recording.** The first two versions of this experiment ran the two arms
 sequentially, and the same code measured **+2.0 %** and then **−4.7 %** — a negative overhead,
 which is impossible. The shared container's throughput swings more between minutes than the effect
 being measured. The arms are now interleaved (one add each, alternating, both stores at the same
-size), so drift lands on both equally; that is the number above. The append cost itself is stable
-across four runs to within 1.5 % (2,865 / 2,826 / 2,821 / 2,823 µs), which is why it — not the
-percentage — is the figure to trust.
+size), so drift lands on both equally. Interleaving narrows the error but does not remove it: the
+same interleaved experiment has since produced 2.0 %, 2.3 %, 2.5 % and 3.3 % on a loaded container,
+so the figure is quoted as a bracket and the append cost — stable within ~8 % across runs
+(2,824–3,317 µs) — is the number to trust.
+
+**A benchmark that refuses to lie.** A later run on a saturated container reported 250 nodes
+verifying *faster* than 100 (94.9 ms vs 316.7 ms), which is impossible for a store that only grew,
+alongside a raw append cost of 63/s against a normal 300–354/s. Every individual stage had exited
+0; only the relationship between them exposed the run as measuring container load rather than the
+ledger. `main()` now checks that the largest store does not verify faster than the smallest and
+exits **3** without writing an artifact when it does. An artifact carrying a self-contradictory
+number is worse than no artifact, because the next reader cites it. An artifact that *would* have
+been written is preserved for the record in the session scratch directory, not in `bench/results/`.
+
+**A forgery test that could not fail.** The swarm stage originally "forged" an author by assigning
+`entries[3]["agent_id"] = "agent-0"` — which was already that entry's author, so nothing was
+tampered with, the bundle verified fine, and the run printed the equivalent of "forged bundle
+accepted" while its own test name implied the opposite. Rewritten to forge a *different* author and
+to raise if the two ever coincide. The property was then verified directly rather than inferred:
+an honest bundle verifies, the same bundle with entries[3] relabelled as another agent is rejected
+with `entry hash does not recompute — the bundle was edited`. It also now exits **4** if a genuinely
+rewritten bundle ever verifies, because that is a security regression, not a slow number.
 
 ## Verification and scale
 
 | Store size | Verify time | Throughput | Result |
 | --- | --- | --- | --- |
 | 120 entries / ~120 nodes | 5.5–9.0 ms | 13,300–22,000 entries/s | ok |
-| 100 nodes | 5.0–5.4 ms | — | ok |
-| 250 nodes | 12.2–16.9 ms | ~20,500 nodes/s | ok |
+| 100 nodes | 5.0–5.4 ms, 64.8 ms loaded | — | ok |
+| 250 nodes | 12.2–16.9 ms, 163.5 ms loaded | ~20,500 nodes/s | ok |
+
+Verify time on this host swings by more than an order of magnitude with contention: 100 nodes has
+measured 5.0 ms and 64.8 ms for the same code, the second at loadavg 10.5 on 4 CPUs. The committed
+artifact therefore records its own `loadavg_start`/`loadavg_end` — quote the artifact's *correctness*
+payload freely, but read its timings against that load figure rather than as the ledger's speed.
+The artifact's raw append cost, for instance, reads 12,642 µs/event against 2,824–3,317 µs across
+quieter runs.
 
 `Mesh.add` is O(n²), so absolute add times grow with the store and any ratio against them
 drifts with it — another reason the cost numbers above are a bracket.
@@ -120,9 +146,11 @@ independent handles. `tests/test_ledger.py::test_concurrent_handles_do_not_fork_
 ## Swarm attribution
 
 100 memories written by 5 agents, asked "who asserted this?" from the log rather than the row:
-**100/100 attributed exactly.** A peer bundle whose author was forged in transit was rejected
-offline (`verify_bundle` → not ok), which is what lets one agent check another's history without
-trusting the sender.
+**100/100 attributed exactly.** A peer bundle whose author was rewritten in transit is rejected
+offline — `verify_bundle` → `entry hash does not recompute — the bundle was edited` — which is what
+lets one agent check another's history without trusting the sender. (See the forgery note under
+cost: the original bench version of this check was a no-op and could not have failed; the property
+was re-verified against a real change before it was claimed.)
 
 ## Anchoring outside the store
 

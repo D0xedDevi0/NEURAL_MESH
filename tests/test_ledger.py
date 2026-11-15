@@ -424,6 +424,10 @@ class LedgerCase(unittest.TestCase):
         self.assertTrue(ProvenanceLedger.verify_bundle(bundle)["ok"])
         tampered = json.loads(json.dumps(bundle))
         tampered["entries"][1]["agent_id"] = "peer-9"
+        # guard against a vacuous test: assigning the author the entry already had is a
+        # no-op, and the assertion below then passes because nothing was tampered with
+        self.assertNotEqual(tampered["entries"][1]["agent_id"],
+                            bundle["entries"][1]["agent_id"])
         self.assertFalse(ProvenanceLedger.verify_bundle(tampered)["ok"])
         withheld = json.loads(json.dumps(bundle))
         withheld["entries"] = withheld["entries"][:-1]
