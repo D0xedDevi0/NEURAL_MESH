@@ -34,6 +34,7 @@
 | Related memories | lonely singleton hit | resonance → the **cluster** |
 | Big tool output | 200 KB eats context | `mesh://` pointer, **36 bytes** |
 | Old/weak memories | accumulate forever | sleep → **prune on purpose** |
+| **Trust a memory** | no way to tell whether a stored fact was rewritten after it was written | append-only **provenance ledger** → `verify` proves who asserted it and what changed since |
 | Query speed | — | Rust hot path: **1.192–1.395× faster**, exact parity (4 runs on a contended shared 8-core AMD EPYC container, `--repeats 7`; [audit](docs/reproduction-report-2026-10-07.md)). The earlier 1.63× may reflect a quieter host. |
 
 ---
@@ -1076,11 +1077,67 @@ memory lane.
 - [x] Subgraph-completeness benchmark under context budgets — topology_score (subgraph_recall × edge_density)
 - [x] **Prospective memory lane** — the "memory of the future": intentions surface before due (`upcoming`/`due_rank`), re-future via `snooze`, expired tracking
 - [x] **Working-memory token-budget optimizer** — context as a budget problem: greedy value-density fit, non-destructive priority eviction (`select_fit`)
+- [x] **Provenance ledger** — append-only hash-chained witness at the storage boundary: `verify_memory()`, `provenance_of()`, Merkle root + Base (8453) anchor payload, peer bundles, logged erasure (`forget_memory`)
 - [ ] Live Helixa signing (on-chain attestation) — gated behind human GO + key-held signer
+- [ ] Ledger anchoring cron — anchor the head to Base on a schedule so unanchored tail-truncation stops being a blind spot
+- [ ] `verify` in the dashboard — show provenance (not just content) for every memory the UI quotes
 
 ---
 
 ## 📜 Release notes
+
+### 🟦 v0.40.0 — Provenance Ledger: memory you can *prove* was not rewritten (2026-11-15)
+
+Every other security layer in the mesh judges **what a memory says** — `ContentValidator`
+fingerprints injection patterns, the quarantine lane isolates what fails, PoM makes a
+claim bettable. None of them can answer the question a real incident starts with:
+**was this the memory that was written, or has someone edited it since?**
+
+v0.40.0 adds an append-only, hash-chained **provenance ledger** hooked at the storage
+boundary (`_save`), so every path that creates or rewrites a memory — `add`, corrections,
+`add_many`, `.mesh` import, peer merge, DREAM consolidation, quarantine — is witnessed.
+Work-state updates (links, resonance, trust, lanes, access counts) are deliberately *not*
+ledger events: they are not claims about the world, and logging them would bury the claims
+that matter.
+
+```python
+rep = mesh.verify_memory()        # chain + coverage + content + anchor + orphans
+rep.ok, rep.kind                  # False, "content"  ← a memory was edited in place
+mesh.provenance_of(node_id)       # who asserted it, and every event since
+mesh.ledger_head()                # the value you anchor
+mesh.ledger.anchor_payload()      # real Base (8453) calldata, ~294 bytes
+mesh.forget_memory(node_id)       # the only erasure that does not read as tampering
+```
+
+Five invariants, each tested against an attack **and** against honest traffic:
+
+| # | Invariant | Attack it catches |
+|---|---|---|
+| I1 | chain — every entry commits to the previous | log edited, reordered, deleted |
+| I2 | content — the live row still matches its witness | value edited in place |
+| I3 | coverage — every live node is witnessed | memory planted behind the API |
+| I4 | anchor — the anchored prefix is intact | history rewritten or cut after anchoring |
+| I5 | orphan — no witness outlives its memory | a row deleted to hide what it said |
+
+Building the ledger's concurrency test surfaced two pre-existing thread-safety bugs in the
+store itself, both reachable from the host shape Hermes uses (one `Mesh` per thread over one
+store). The chain link was read outside any lock, so two writers could chain onto the same tail
+and fork the log — now an explicit `BEGIN IMMEDIATE` takes the write lock *before* the tail is
+read, and `PRAGMA busy_timeout=10000` makes a second writer wait rather than lose the write.
+Separately, `_load()` handed out the live node cache while `_save` inserted into it, so
+concurrent tool calls raised `dictionary changed size during iteration` and lost the write;
+readers now get a shallow copy, and reads materialise under the lock instead of iterating a lazy
+cursor another thread can corrupt (which surfaced as `IndexError: tuple index out of range`).
+Both are covered by tests that hammer a store from multiple threads.
+
+Honest limits, stated up front: the ledger proves **integrity of the record**, not
+**truth of the claim** (a lie is signed as faithfully as a fact); a privileged attacker
+who rewrites the *whole* database including the log is detectable only because the head
+was anchored outside it; and **unanchored tail-truncation is a real blind spot** — cutting
+the newest entries and repairing the store to match leaves a smaller, self-consistent
+store that local verification accepts. That is why anchoring exists, and why the roadmap
+carries an anchoring cron. Measured attack/cost evidence:
+[`docs/ledger-provenance.md`](docs/ledger-provenance.md).
 
 ### v0.21.0 — Rust-Accelerated Resonance Retrieval (2026-08-03)
 

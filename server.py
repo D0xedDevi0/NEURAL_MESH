@@ -98,11 +98,20 @@ def health():
     # Count nodes from the thread-safe db connection
     cur = mesh.db.execute("SELECT COUNT(*) FROM nodes")
     count = cur.fetchone()[0]
+    ledger = mesh.ledger_head()
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.39.0",
+        "version": "0.40.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
+        # Provenance in the health line: how many events are witnessed, and
+        # whether the head has been anchored outside this database.
+        "ledger": {
+            "enabled": ledger.get("enabled", False),
+            "entries": ledger.get("entries", 0),
+            "head_seq": ledger.get("seq", 0),
+            "anchored": ledger.get("anchored", False),
+        },
     })
 
 # ─── Dashboard ─────────────────────────────────────────────────────────────
@@ -358,6 +367,52 @@ def snapshot_route():
         for n in nodes
     ]
     return jsonify({"results": results, "count": len(results)})
+
+
+@app.route("/mesh/ledger/verify", methods=["GET", "POST"])
+def ledger_verify_route():
+    """Provenance ledger verification — read-only, no auth by design.
+
+    Verifying memory integrity is exactly what a suspicious third party should
+    be able to do without credentials. Nothing here writes.
+    """
+    deep = True
+    if request.method == "POST":
+        data = request.get_json() or {}
+        deep = bool(data.get("deep", True))
+    rep = mesh.verify_memory(deep=deep)
+    return jsonify({"summary": rep.summary(), **rep.to_dict()}), (200 if rep.ok else 409)
+
+
+@app.route("/mesh/ledger/head", methods=["GET"])
+def ledger_head_route():
+    """The current head — the value to anchor (Base calldata included)."""
+    return jsonify({"head": mesh.ledger_head(),
+                    "anchor": (mesh.ledger.anchor_payload() if mesh.ledger
+                               else {"anchorable": False})})
+
+
+@app.route("/mesh/ledger/provenance", methods=["GET", "POST"])
+def ledger_provenance_route():
+    """Chain of custody for one memory: who asserted it, what happened since."""
+    if request.method == "POST":
+        node_id = (request.get_json() or {}).get("node_id", "")
+    else:
+        node_id = request.args.get("node_id", "")
+    if not node_id:
+        return jsonify({"error": "node_id required"}), 400
+    if mesh.ledger is None:
+        return jsonify({"error": "ledger disabled on this instance"}), 503
+    return jsonify(mesh.provenance_of(node_id))
+
+
+@app.route("/mesh/ledger/bundle", methods=["GET"])
+def ledger_bundle_route():
+    """A verifiable handoff for a peer — events only, no contents."""
+    if mesh.ledger is None:
+        return jsonify({"error": "ledger disabled on this instance"}), 503
+    limit = int(request.args.get("limit", 500))
+    return jsonify(mesh.ledger.export_bundle(limit=limit))
 
 
 @app.route("/mesh/reconcile", methods=["POST"])
@@ -865,8 +920,9 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.39.0",
+        "version": "0.40.0",
         "provenance_breakdown": provenance_breakdown,
+        "ledger": mesh.ledger_head(),
     })
 
 
@@ -931,8 +987,9 @@ def erc8004_manifest():
             "crypto-economic",
             "cross-source-corroboration",
             "proof-of-memory",
+            "tamper-evident-provenance",
         ],
-        "version": "0.39.0",
+        "version": "0.40.0",
     })
 
 

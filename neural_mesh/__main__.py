@@ -156,10 +156,47 @@ def cmd_rust_info(args):
         print(json.dumps({"rust_module": "not available", "error": str(e)}))
 
 
+def cmd_ledger(args):
+    """Provenance ledger operations — read-only except bootstrap/anchor/export."""
+    from neural_mesh import Mesh
+    mesh = Mesh(args.db or "mesh.db")
+    action = args.action
+    if action == "verify":
+        rep = mesh.verify_memory()
+        print(json.dumps({"summary": rep.summary(), **rep.to_dict()}, indent=2))
+        return 0 if rep.ok else 1
+    if action == "head":
+        print(json.dumps(mesh.ledger_head(), indent=2))
+    elif action == "stats":
+        print(json.dumps(mesh.ledger.stats(), indent=2))
+    elif action == "provenance":
+        if not args.node:
+            print("--node is required for provenance", file=sys.stderr)
+            return 2
+        print(json.dumps(mesh.provenance_of(args.node), indent=2))
+    elif action == "anchor":
+        print(json.dumps(mesh.ledger.anchor(target=args.target), indent=2))
+    elif action == "anchor-payload":
+        print(json.dumps(mesh.ledger.anchor_payload(), indent=2))
+    elif action == "bootstrap":
+        print(json.dumps(mesh.adopt_ledger(), indent=2))
+    elif action == "export":
+        bundle = mesh.ledger.export_bundle(limit=args.limit)
+        if args.out:
+            with open(args.out, "w") as fh:
+                json.dump(bundle, fh, indent=2)
+            print(json.dumps({"written": args.out, "entries": len(bundle["entries"]),
+                              "chain_id": bundle["chain_id"],
+                              "head": bundle["head"]}, indent=2))
+        else:
+            print(json.dumps(bundle, indent=2))
+    return 0
+
+
 def main():
     p = argparse.ArgumentParser(
         prog="neural-mesh",
-        description="Self-organizing agentic memory mesh — v0.39.0")
+        description="Self-organizing agentic memory mesh — v0.40.0")
     sp = p.add_subparsers(dest="cmd")
 
     # export
@@ -214,6 +251,17 @@ def main():
     # rust-info
     sp.add_parser("rust-info", help="Rust accelerator status")
 
+    # provenance ledger
+    p_ledger = sp.add_parser("ledger", help="Provenance ledger: verify, head, provenance, anchor")
+    p_ledger.add_argument("action",
+                          choices=["verify", "head", "stats", "provenance", "anchor",
+                                   "anchor-payload", "bootstrap", "export"])
+    p_ledger.add_argument("--db", help="SQLite db path")
+    p_ledger.add_argument("--node", default="", help="node id (provenance)")
+    p_ledger.add_argument("--out", default="", help="output file (export)")
+    p_ledger.add_argument("--limit", type=int, default=500, help="entries to export")
+    p_ledger.add_argument("--target", default="local", help="anchor target label")
+
     # version
     sp.add_parser("version", help="Print version")
 
@@ -239,8 +287,10 @@ def main():
         cmd_pointer_summary(args)
     elif args.cmd == "rust-info":
         cmd_rust_info(args)
+    elif args.cmd == "ledger":
+        cmd_ledger(args)
     elif args.cmd == "version":
-        print("NEURAL_MESH v0.39.0")
+        print(f"NEURAL_MESH v{__import__('neural_mesh').__version__}")
     else:
         p.print_help()
 

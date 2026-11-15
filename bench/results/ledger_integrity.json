@@ -1,0 +1,139 @@
+{
+  "attacks": [
+    {
+      "attack": "content edited in place",
+      "description": "a stored value is rewritten in the row",
+      "ledger": true,
+      "ledger_kind": "content",
+      "rowhash": true
+    },
+    {
+      "attack": "authorship laundered",
+      "description": "agent_id moved to another agent (metadata only)",
+      "ledger": true,
+      "ledger_kind": "content",
+      "rowhash": false
+    },
+    {
+      "attack": "validity rewritten",
+      "description": "a live fact marked already-superseded",
+      "ledger": true,
+      "ledger_kind": "content",
+      "rowhash": false
+    },
+    {
+      "attack": "memory deleted",
+      "description": "an inconvenient row removed from the store",
+      "ledger": true,
+      "ledger_kind": "orphan",
+      "rowhash": false
+    },
+    {
+      "attack": "memory inserted behind the API",
+      "description": "a row planted with no provenance",
+      "ledger": true,
+      "ledger_kind": "coverage",
+      "rowhash": false
+    },
+    {
+      "attack": "tail truncated (unanchored)",
+      "description": "the last entries cut off, prefix intact",
+      "ledger": false,
+      "ledger_kind": "",
+      "rowhash": false
+    },
+    {
+      "attack": "tail truncated (anchored)",
+      "description": "the same cut after the head was anchored",
+      "ledger": true,
+      "ledger_kind": "anchor",
+      "rowhash": false
+    },
+    {
+      "attack": "audit trail edited",
+      "description": "a ledger entry rewritten to reframe a write",
+      "ledger": true,
+      "ledger_kind": "chain",
+      "rowhash": "n/a (no audit trail to edit)"
+    }
+  ],
+  "attribution": {
+    "agents": 5,
+    "attribution_accuracy": 1.0,
+    "attribution_exact": 100,
+    "bundle_forgery_reason": "chain verified",
+    "bundle_verified": true,
+    "bundle_with_forged_author": true,
+    "head_seq": 100,
+    "memories": 100
+  },
+  "cost": {
+    "bytes_per_entry": 477.9,
+    "ledger_off": {
+      "db_bytes": 569344,
+      "ledger_entries": 0,
+      "mean_add_us": 203806.3,
+      "p95_add_us": 390899.5,
+      "verify_ok": null,
+      "verify_seconds": null
+    },
+    "ledger_on": {
+      "db_bytes": 626688,
+      "ledger_entries": 120,
+      "mean_add_us": 207798.3,
+      "p95_add_us": 386540.8,
+      "verify_ok": true,
+      "verify_seconds": 0.006
+    },
+    "overhead_pct": 2.0,
+    "overhead_us_per_add": 3992.0,
+    "raw_append": {
+      "appends_per_second": 349.0,
+      "entries": 2000,
+      "seconds": 5.731,
+      "us_per_append": 2865.4
+    },
+    "verify_entries_per_second": 20000.0
+  },
+  "generated_at": 1794758053.0801554,
+  "honest_traffic": {
+    "by_op": {
+      "assert": 43,
+      "import": 70,
+      "supersede": 11
+    },
+    "entries_per_node": 1.097,
+    "false_positives": 0,
+    "ledger_entries": 124,
+    "live_nodes": 113,
+    "merged_peer_nodes": {
+      "added": 10,
+      "fused": 0,
+      "peer": "peer-1",
+      "quarantined": 0,
+      "skipped": 0,
+      "trust_delta": 0.0
+    },
+    "operations": 80,
+    "verdict": "ledger OK \u2014 124 entries verified over 113 live memories; head #124; anchored: no"
+  },
+  "scale": {
+    "100": {
+      "db_bytes": 475136,
+      "entries": 100,
+      "nodes": 100,
+      "nodes_per_second": 22974.5,
+      "ok": true,
+      "verify_ms": 4.4
+    },
+    "250": {
+      "db_bytes": 2170880,
+      "entries": 250,
+      "nodes": 250,
+      "nodes_per_second": 16945.2,
+      "ok": true,
+      "verify_ms": 14.8
+    }
+  },
+  "scheme": "mesh-ledger-v1"
+}

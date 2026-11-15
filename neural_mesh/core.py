@@ -15,6 +15,7 @@ from .node import MemoryNode, MemoryType
 from .resonance import retrieve as _resonance_retrieve, _select_backend
 from .security import (QUARANTINE_LANE, ContentValidator, content_fingerprint,
                        corroboration_bump, is_corroborated)
+from .ledger import ProvenanceLedger
 
 
 class _LockedConnection:
@@ -63,6 +64,24 @@ class _LockedConnection:
         with self._lock:
             return self._conn.cursor()
 
+    def query_all(self, sql, params=()):
+        """Run a read and materialise it *under the lock*.
+
+        A cursor is lazy: iterating it after ``execute`` has returned happens
+        outside the lock, and another thread's statement on this shared
+        connection then corrupts the iteration — observed in practice as
+        ``IndexError: tuple index out of range`` on ``row["id"]`` and as
+        "dictionary changed size during iteration" once a loop rebuilds a cache
+        another thread is reading. Read-through-``query_all``, never iterate a
+        raw cursor on this connection.
+        """
+        with self._lock:
+            return self._conn.execute(sql, params).fetchall()
+
+    def query_one(self, sql, params=()):
+        with self._lock:
+            return self._conn.execute(sql, params).fetchone()
+
     def __getattr__(self, name):
         return getattr(object.__getattribute__(self, "_conn"), name)
 
@@ -77,7 +96,8 @@ class Mesh:
                  validator: "ContentValidator | None | bool" = True,
                  quarantine_policy: str = "strict",
                  lexical_backend: str = "bow",
-                 query_rewrite: bool = False):
+                 query_rewrite: bool = False,
+                 ledger: bool = True):
         if default_recall not in {"resonance", "hybrid", "dense", "lexical"}:
             raise ValueError(
                 "default_recall must be 'resonance', 'hybrid', 'dense', or 'lexical'")
@@ -101,6 +121,11 @@ class Mesh:
         self.db = _LockedConnection(
             sqlite3.connect(db_path, check_same_thread=False), self._db_lock)
         self.db.row_factory = sqlite3.Row
+        # Handles are opened per thread (Hermes does exactly this) and by
+        # separate processes (CLI/server/plugin), so a second writer must wait
+        # for the lock rather than fail the write. Without this, concurrent
+        # handles raise "database is locked" and the write is silently lost.
+        self.db.execute("PRAGMA busy_timeout=10000")
         self.embedder = embedder
         self.link_threshold = link_threshold
         self.resonance_backend = resonance_backend
@@ -114,6 +139,12 @@ class Mesh:
             ContentValidator() if validator else None)
         self.quarantine_policy = quarantine_policy
         self._init_db()
+        # Provenance ledger: an append-only, hash-chained witness of every
+        # identity-changing memory event, hooked at the storage boundary so
+        # import/merge/ingest paths are covered too. `ledger=False` opts out
+        # (tests/benches that measure the store without the log).
+        self.ledger = (ProvenanceLedger(lambda: self.db, lock=self._db_lock)
+                       if ledger else None)
         # In-memory node cache so repeated retrieval doesn't reload SQLite every
         # call. `add`/`sleep`/`_supersede` invalidate it via _invalidate_cache.
         self._node_cache: dict | None = None
@@ -147,23 +178,58 @@ class Mesh:
         )
         self.db.commit()
 
+    def _read_all(self, sql: str, params: tuple = ()) -> list:
+        """Read + materialise a result set from whatever ``self.db`` is.
+
+        Usually that is a ``_LockedConnection`` (use its locked ``query_all``),
+        but staging paths attach a raw sqlite3 handle. ``fetchall()`` here means
+        the result is materialised either way, so no caller ever iterates a lazy
+        cursor that another thread could corrupt.
+        """
+        db = self.db
+        if hasattr(db, "query_all"):
+            return db.query_all(sql, params)
+        return db.execute(sql, params).fetchall()
+
     def _load(self) -> dict:
+        """The node mapping.
+
+        Callers get their own shallow copy, never the live cache dict: a
+        concurrent ``_save`` inserts into the cache while another thread is
+        iterating it, which raises "dictionary changed size during iteration".
+        That is a host-shaped bug (Hermes runs sync_turn and tool calls on
+        different threads), not a hypothetical one. Copies are shallow, so the
+        node objects are shared — only the structure is stabilised, and nothing
+        writes through the returned mapping.
+        """
         cache = getattr(self, "_node_cache", None)
         if cache is not None:
-            return cache
+            return dict(cache)
+        _json = __import__("json")
         out = {}
-        for row in self.db.execute("SELECT * FROM nodes"):
+        # Read tolerantly *and* eagerly: staging paths (`sharing._StagedMesh`)
+        # duck-type Mesh over a raw sqlite3 handle, so a hard dependency on
+        # _LockedConnection would break peer merges. fetchall() here means no
+        # caller ever iterates a lazy cursor another thread could corrupt.
+        _db = self.db
+        _rows = (_db.query_all("SELECT * FROM nodes") if hasattr(_db, "query_all")
+                 else _db.execute("SELECT * FROM nodes").fetchall())
+        for row in _rows:
             r = (
                 row["id"], row["type"], row["content"],
-                __import__("json").loads(row["embedding"]),
-                __import__("json").loads(row["links"]),
-                __import__("json").loads(row["meta"]),
+                _json.loads(row["embedding"]),
+                _json.loads(row["links"]),
+                _json.loads(row["meta"]),
             )
             out[r[0]] = MemoryNode.from_row(r)
+        # Publish the rebuilt cache in one assignment. Filling the live dict
+        # would make a concurrent reader iterate a dict that changes size
+        # mid-iteration ("dictionary changed size during iteration"), which is
+        # exactly what a threaded host hits when two tool calls land together.
         self._node_cache = out
-        return out
+        return dict(out)   # never hand out the live dict: _save inserts into it
 
-    def _save(self, node: MemoryNode):
+    def _save(self, node: MemoryNode, op: str = "", source: str = "", force: bool = False):
         import json
         row = node.to_row()
         self.db.execute(
@@ -174,6 +240,12 @@ class Mesh:
         self.db.commit()
         if getattr(self, "_node_cache", None) is not None:
             self._node_cache[node.id] = node
+        # Witness the write if it changed what the memory *claims about itself*.
+        # Working-state saves (links, resonance, trust, lane, access counts) are
+        # deliberately not claims, so they do not grow the log.
+        ledger = getattr(self, "ledger", None)
+        if ledger is not None:
+            ledger.note(node, op=op, source=source, force=force)
 
     def _touch(self, node: MemoryNode, writeback: bool = True):
         """Update access stats. `writeback=False` skips the expensive SQLite
@@ -244,7 +316,7 @@ class Mesh:
         trust bumper and the flag. This is the mesh's consensus defense — a
         poisoned claim confirmed by no one stays low-trust and decays."""
         fp = content_fingerprint(node.content)
-        for other in self._load().values():
+        for other in list(self._load().values()):
             if other.id == node.id or other.superseded_by:
                 continue
             if other.lane == QUARANTINE_LANE:
@@ -304,7 +376,7 @@ class Mesh:
         node.resonance = node.trust if node.lane != QUARANTINE_LANE else 0.0
         if prospective_at:
             node.links["__prospective_at__"] = prospective_at
-        self._save(node)
+        self._save(node, op="quarantine" if node.lane == QUARANTINE_LANE else "")
         if supersedes:
             self._supersede(supersedes, node)
         if node.lane != QUARANTINE_LANE:
@@ -360,7 +432,7 @@ class Mesh:
         old.valid_to = time.time()   # bi-temporal: the old fact ceased being true NOW
         old.links["supersedes::" + new_node.id] = 1.0
         new_node.links["superseded::" + old_id] = 1.0
-        self._save(old)
+        self._save(old, op="supersede", force=True)
         self._save(new_node)
 
     def _auto_link(self, node: MemoryNode):
@@ -869,6 +941,51 @@ class Mesh:
         return {"total": len(live), "by_type": by_type, "hot": hot,
                 "cold": cold, "quarantined": quarantined,
                 "resonance_backend": _select_backend(self.resonance_backend)}
+
+    # ---------- provenance ledger ----------
+    def verify_memory(self, deep: bool = True):
+        """Re-derive the provenance chain against the live store (read-only)."""
+        if self.ledger is None:
+            from .ledger import VerifyReport
+            return VerifyReport(ok=False, kind="disabled",
+                                reason="this mesh was opened with ledger=False")
+        return self.ledger.verify(deep=deep)
+
+    def provenance_of(self, node_id: str) -> dict:
+        """Chain of custody for one memory: who asserted it, what happened since."""
+        if self.ledger is None:
+            return {"node_id": node_id, "witnessed": False, "events": [],
+                    "reason": "ledger disabled"}
+        return self.ledger.provenance(node_id)
+
+    def ledger_head(self) -> dict:
+        if self.ledger is None:
+            return {"seq": 0, "entries": 0, "anchored": False, "enabled": False}
+        head = self.ledger.head()
+        head["enabled"] = True
+        return head
+
+    def adopt_ledger(self, agent_id: str = "self") -> dict:
+        """Attest memories that predate the ledger (see ProvenanceLedger.bootstrap)."""
+        if self.ledger is None:
+            return {"adopted": 0, "reason": "ledger disabled"}
+        return self.ledger.bootstrap(agent_id=agent_id)
+
+    def forget_memory(self, node_id: str, reason: str = "", by: str = "self") -> dict:
+        """Erase a memory *and log the erasure*.
+
+        Deleting the row alone leaves an orphaned witness that ``verify_memory``
+        reports as tampering — correctly. This is the honest path: the content
+        goes, the fact that it existed and was removed stays.
+        """
+        result = {"deleted": False, "reason": "ledger disabled"}
+        if self.ledger is not None:
+            result = self.ledger.forget(node_id, reason=reason, by=by)
+        self._invalidate_cache()
+        cur = self.db.execute("DELETE FROM nodes WHERE id=?", (node_id,))
+        self.db.commit()
+        result["deleted"] = bool(cur.rowcount)
+        return result
 
 
 def _sim(a, b) -> float:
