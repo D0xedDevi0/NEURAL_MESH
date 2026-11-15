@@ -1158,7 +1158,8 @@ idle host: 33.7 ms at n=30, 180.2 ms at n=55, 353.2 ms at n=105, 740.2 ms at n=2
 exponent of **~1.05**, i.e. about **3.5 ms per node**, linear rather than quadratic.
 
 Extrapolating that: a single add at the live mesh's ~2,500 nodes costs on the order of **9 s**
-(upper bound — host load inflated the later points). Every write an agent makes would block on
+(upper bound — the hypervisor steals 51–64% of this VM's CPU, which inflates the later points;
+`bench/scale_add_probe.py` now refuses to publish a curve taken under more than 15% steal). Every write an agent makes would block on
 that, so the store **cannot be put in front of a live agent at that scale until add cost is fixed**
 (incremental/approximate-neighbour link search, a candidate cap per add, or batched linking). That
 is a linear, tractable problem, unlike the quadratic one the old wording implied — but the fix is

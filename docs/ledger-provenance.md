@@ -134,6 +134,7 @@ add. Measured on a just-rebooted idle host:
 | Store size | Mean add | Min / max | Step exponent |
 | --- | --- | --- | --- |
 | 30 nodes | 33.7 ms | 31.0 / 38.1 | — |
+<!-- the ladder above was taken before steal was instrumented; read the caveats below -->
 | 55 nodes | 180.2 ms | 167.9 / 199.5 | |
 | 105 nodes | 353.2 ms | 334.6 / 371.5 | ~1.04 |
 | 205 nodes | 740.2 ms | 710.1 / 793.9 | ~1.11 |
@@ -141,8 +142,12 @@ add. Measured on a just-rebooted idle host:
 From n=55 the per-add cost is **linear** in store size — a fitted exponent of ~1.05, i.e. roughly
 **3.5 ms per node** — not quadratic. Two qualifications, both load-related:
 
-- Host load rose during the ladder (0.4 → ~10), which *inflates* the later points, so ~1.05 is an
-  upper bound and the true exponent may be lower.
+- **The host steals CPU.** Sampling `/proc/stat` / `top` during this work showed **51–64% steal**
+  (`%st`) with our own usage at 2–6% and idle at 32–40% — the hypervisor takes over half the
+  machine and none of it is ours. That inflates the later ladder points, so ~1.05 is an upper
+  bound; two consecutive adds at the same n have been observed at 8.7 ms and 166.5 ms, a 19×
+  spread that is the host, not the code. The probe now records steal per point and **refuses to
+  publish a curve** measured under more than 15% steal.
 - The n=30 point is off-trend (a nearly empty store has almost no links to compare against), so a
   fit over all points reports ~1.5 and a fit over the tail reports ~1.05. Quote the tail.
 
