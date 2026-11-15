@@ -72,34 +72,38 @@
     "ledger_off": {
       "db_bytes": 569344,
       "ledger_entries": 0,
-      "mean_add_us": 203806.3,
-      "p95_add_us": 390899.5,
+      "mean_add_us": 205708.3,
+      "p95_add_us": 393195.0,
+      "verify_entries_per_second": null,
+      "verify_ms": null,
       "verify_ok": null,
       "verify_seconds": null
     },
     "ledger_on": {
       "db_bytes": 626688,
       "ledger_entries": 120,
-      "mean_add_us": 207798.3,
-      "p95_add_us": 386540.8,
+      "mean_add_us": 207708.4,
+      "p95_add_us": 399643.3,
+      "verify_entries_per_second": 21995,
+      "verify_ms": 5.46,
       "verify_ok": true,
-      "verify_seconds": 0.006
+      "verify_seconds": 0.005456
     },
-    "overhead_pct": 2.0,
-    "overhead_us_per_add": 3992.0,
+    "overhead_pct": 1.0,
+    "overhead_us_per_add": 2000.1,
     "raw_append": {
-      "appends_per_second": 349.0,
+      "appends_per_second": 354.3,
       "entries": 2000,
-      "seconds": 5.731,
-      "us_per_append": 2865.4
+      "seconds": 5.645,
+      "us_per_append": 2822.7
     },
-    "verify_entries_per_second": 20000.0
+    "verify_entries_per_second": 21995
   },
-  "generated_at": 1794758053.0801554,
+  "generated_at": 1794759148.8498778,
   "honest_traffic": {
     "by_op": {
-      "assert": 43,
-      "import": 70,
+      "assert": 103,
+      "import": 10,
       "supersede": 11
     },
     "entries_per_node": 1.097,
@@ -119,20 +123,20 @@
   },
   "scale": {
     "100": {
-      "db_bytes": 475136,
+      "db_bytes": 479232,
       "entries": 100,
       "nodes": 100,
-      "nodes_per_second": 22974.5,
+      "nodes_per_second": 20117.8,
       "ok": true,
-      "verify_ms": 4.4
+      "verify_ms": 5.0
     },
     "250": {
-      "db_bytes": 2170880,
+      "db_bytes": 2174976,
       "entries": 250,
       "nodes": 250,
-      "nodes_per_second": 16945.2,
+      "nodes_per_second": 20435.7,
       "ok": true,
-      "verify_ms": 14.8
+      "verify_ms": 12.2
     }
   },
   "scheme": "mesh-ledger-v1"

@@ -48,22 +48,30 @@ entries are the point of the honest reporting, not an oversight:
 
 | | |
 | --- | --- |
-| Append overhead vs the identical workload with the ledger off | **+3,992 µs/add (2.0 %)** |
-| Ledger's own write cost, mesh add path excluded | 349 entries/s (**2,865 µs each**) |
+| Append overhead, interleaved A/B at the same n | **+2,000 µs/add (1.0 %)** |
+| Ledger's own write cost, mesh add path excluded | 354 entries/s (**2,823 µs each**) |
 | Storage | ~478 bytes per entry |
 
 Read these together with one caveat: `Mesh.add` is itself O(n²) over the store (auto-linking and
 corroboration), dominating the number — at n=120 an `add` costs ~200 ms. The ledger accounts for
-about 2 % of that. The raw figure is the honest per-event price: each witnessed event is its own
-committed transaction, which is what makes it durable (and what makes it ~2.9 ms).
+about 1 % of that. The raw figure is the honest per-event price: each witnessed event is its own
+committed transaction, which is what makes it durable (and what makes it ~2.8 ms).
+
+**A measurement bug worth recording.** The first two versions of this experiment ran the two arms
+sequentially, and the same code measured **+2.0 %** and then **−4.7 %** — a negative overhead,
+which is impossible. The shared container's throughput swings more between minutes than the effect
+being measured. The arms are now interleaved (one add each, alternating, both stores at the same
+size), so drift lands on both equally; that is the number above. The append cost itself is stable
+across four runs to within 1.5 % (2,865 / 2,826 / 2,821 / 2,823 µs), which is why it — not the
+percentage — is the figure to trust.
 
 ## Verification and scale
 
 | Store size | Verify time | Throughput | Result |
 | --- | --- | --- | --- |
-| 120 entries / ~120 nodes | 6 ms | ~20,000 entries/s | ok |
-| 100 nodes | 4.4 ms | — | ok |
-| 250 nodes | 14.8 ms | ~17,000 nodes/s | ok |
+| 120 entries / ~120 nodes | 5.5 ms | ~22,000 entries/s | ok |
+| 100 nodes | 5.0 ms | — | ok |
+| 250 nodes | 12.2 ms | ~20,500 nodes/s | ok |
 
 Verification is linear in entries and costs milliseconds at the sizes a single agent's store
 reaches. The live production mesh (~2.5k nodes) has not been measured end-to-end; the slope

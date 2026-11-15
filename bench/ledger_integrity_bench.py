@@ -309,25 +309,38 @@ def run_false_positive_experiment(tmp: str, n: int = 80) -> dict:
 
 def run_cost_experiment(tmp: str, n: int = 120) -> dict:
     """Append overhead against the identical workload with the ledger off."""
-    timings = {}
-    for arm, use_ledger in (("ledger_off", False), ("ledger_on", True)):
-        path = os.path.join(tmp, f"cost-{arm}.db")
-        mesh = Mesh(path, validator=False, ledger=use_ledger)
-        per_add = []
-        for i in range(n):
+    # The two arms are interleaved: one add each, alternating, at the same store size.
+    # Run sequentially, container drift (the shared host swings 5%+ between minutes)
+    # swamps the effect and has produced both +2.0% and -4.7% for the same code. Both
+    # arms must face the same machine at the same n for the delta to mean anything.
+    paths = {"ledger_off": os.path.join(tmp, "cost-off.db"),
+             "ledger_on": os.path.join(tmp, "cost-on.db")}
+    arms = {"ledger_off": Mesh(paths["ledger_off"], validator=False, ledger=False),
+            "ledger_on": Mesh(paths["ledger_on"], validator=False, ledger=True)}
+    per_add = {name: [] for name in arms}
+    for i in range(n):
+        for name, mesh in arms.items():
             t0 = time.perf_counter()
             mesh.add(f"cost fact {i} about rotation and thresholds")
-            per_add.append((time.perf_counter() - t0) * 1e6)  # microseconds
+            per_add[name].append((time.perf_counter() - t0) * 1e6)  # microseconds
+
+    timings = {}
+    for name, mesh in arms.items():
         entries = mesh.ledger.count() if mesh.ledger else 0
         t0 = time.perf_counter()
         rep = mesh.verify_memory() if mesh.ledger else None
         verify_s = time.perf_counter() - t0
-        size = os.path.getsize(path)
-        timings[arm] = {
-            "mean_add_us": round(statistics.mean(per_add), 1),
-            "p95_add_us": round(sorted(per_add)[int(len(per_add) * 0.95)], 1),
+        size = os.path.getsize(paths[name])
+        timings[name] = {
+            "mean_add_us": round(statistics.mean(per_add[name]), 1),
+            "p95_add_us": round(sorted(per_add[name])[int(len(per_add[name]) * 0.95)], 1),
             "ledger_entries": entries,
-            "verify_seconds": round(verify_s, 3) if rep else None,
+            # keep enough precision that a millisecond-scale verify is not rounded into
+            # a fake round number: 40 entries / 0.002s read back as "20000.0 entries/s"
+            "verify_seconds": round(verify_s, 6) if rep else None,
+            "verify_ms": round(verify_s * 1000, 2) if rep else None,
+            "verify_entries_per_second": (round(entries / verify_s) if rep and verify_s
+                                          else None),
             "verify_ok": rep.ok if rep else None,
             "db_bytes": size,
         }
@@ -355,8 +368,7 @@ def run_cost_experiment(tmp: str, n: int = 120) -> dict:
         100.0 * (on["mean_add_us"] - off["mean_add_us"]) / off["mean_add_us"], 1)
     timings["bytes_per_entry"] = round(
         (on["db_bytes"] - off["db_bytes"]) / max(1, on["ledger_entries"]), 1)
-    timings["verify_entries_per_second"] = round(
-        on["ledger_entries"] / on["verify_seconds"], 1) if on["verify_seconds"] else None
+    timings["verify_entries_per_second"] = on.get("verify_entries_per_second")
     return timings
 
 
