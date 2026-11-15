@@ -97,7 +97,8 @@ class Mesh:
                  quarantine_policy: str = "strict",
                  lexical_backend: str = "bow",
                  query_rewrite: bool = False,
-                 ledger: bool = True):
+                 ledger: bool = True,
+                 anchor_file: str = ""):
         if default_recall not in {"resonance", "hybrid", "dense", "lexical"}:
             raise ValueError(
                 "default_recall must be 'resonance', 'hybrid', 'dense', or 'lexical'")
@@ -143,7 +144,11 @@ class Mesh:
         # identity-changing memory event, hooked at the storage boundary so
         # import/merge/ingest paths are covered too. `ledger=False` opts out
         # (tests/benches that measure the store without the log).
-        self.ledger = (ProvenanceLedger(lambda: self.db, lock=self._db_lock)
+        # `anchor_file` is where anchors are pinned so they survive an attacker who
+        # owns the database. Left empty, anchoring still works but only in-store,
+        # which is convenience, not security.
+        self.ledger = (ProvenanceLedger(lambda: self.db, lock=self._db_lock,
+                                       anchor_file=anchor_file)
                        if ledger else None)
         # In-memory node cache so repeated retrieval doesn't reload SQLite every
         # call. `add`/`sleep`/`_supersede` invalidate it via _invalidate_cache.

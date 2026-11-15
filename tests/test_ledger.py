@@ -21,7 +21,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from neural_mesh import Mesh, MemoryType  # noqa: E402
 from neural_mesh.ledger import (ATTESTED_FIELDS, ProvenanceLedger,  # noqa: E402
-                                attested_digest, content_digest, merkle_root)
+                                attested_digest, content_digest, merkle_root,
+                                read_anchors)
 
 
 def _raw(db_path: str):
@@ -121,9 +122,10 @@ class LedgerCase(unittest.TestCase):
         self.assertFalse(rep.ok)
         self.assertEqual(rep.kind, "content")
         self.assertEqual(rep.node_id, n.id)
-        self.assertIn("edited in place", rep.reason)
+        self.assertIn("rewritten in place", rep.reason)
+        self.assertEqual(rep.fields, ["content"])
 
-    def test_attack_moving_a_fact_to_another_author_is_caught(self):
+    def test_attack_moving_a_fact_to_another_author_is_caught(self):  # noqa: D401
         """An editor who cannot change the node id still cannot launder
         authorship: agent_id is inside the attestation digest."""
         n = self.mesh.add("the bridge was audited", agent_id="alice")
@@ -135,7 +137,10 @@ class LedgerCase(unittest.TestCase):
         conn.close()
         rep = self.mesh.verify_memory()
         self.assertFalse(rep.ok)
-        self.assertEqual(rep.kind, "content")
+        # not "content": nothing the memory says changed, only who said it — a
+        # distinction the report can now make
+        self.assertEqual(rep.kind, "attribution")
+        self.assertIn("agent_id", rep.fields)
 
     # ------------------------------------------------------------------ #
     # I3 — memory that was never witnessed
@@ -522,3 +527,149 @@ class TestAttributionIsExact(unittest.TestCase):
         self.assertEqual(p["authors"], ["alice", "self"])
         self.assertEqual(p["latest_op"], "supersede")
 
+
+
+class TestFieldLevelForensics(unittest.TestCase):
+    """A digest answers "did anything change?" — but the question that matters for a
+    log of who-did-what is "what changed?". A relabelled author is a different act
+    from a rewritten fact, and the report should say which one happened."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="ledger-fields-")
+        self.db = os.path.join(self.tmp, "m.db")
+        self.mesh = Mesh(self.db, validator=False)
+        self.mesh.add("the treasury threshold is 2 of 3")
+        self.mesh.add("the audit log is append-only")
+        self.nid = sorted(self.mesh._load())[0]
+
+    def tearDown(self):
+        self.mesh.db.close()
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _tamper_meta(self, **changes):
+        conn = _raw(self.db)
+        row = conn.execute("SELECT meta FROM nodes WHERE id=?", (self.nid,)).fetchone()
+        meta = json.loads(row["meta"])
+        meta.update(changes)
+        conn.execute("UPDATE nodes SET meta=? WHERE id=?", (json.dumps(meta), self.nid))
+        conn.commit()
+        conn.close()
+
+    def test_relabelled_author_reports_as_attribution(self):
+        self._tamper_meta(agent_id="attacker")
+        rep = self.mesh.verify_memory()
+        self.assertFalse(rep.ok)
+        self.assertEqual(rep.kind, "attribution")
+        self.assertIn("agent_id", rep.fields)
+        self.assertIn("attributed to someone other than", rep.reason)
+
+    def test_rewritten_validity_reports_as_validity(self):
+        self._tamper_meta(valid_to=time.time() - 86400, superseded_by="ghost0000000")
+        rep = self.mesh.verify_memory()
+        self.assertFalse(rep.ok)
+        self.assertEqual(rep.kind, "validity")
+        self.assertIn("superseded_by", rep.fields)
+
+    def test_rewritten_content_still_reports_as_content(self):
+        conn = _raw(self.db)
+        conn.execute("UPDATE nodes SET content='the treasury threshold is 1 of 3' WHERE id=?",
+                     (self.nid,))
+        conn.commit()
+        conn.close()
+        rep = self.mesh.verify_memory()
+        self.assertFalse(rep.ok)
+        self.assertEqual(rep.kind, "content")
+        self.assertEqual(rep.fields, ["content"])
+
+    def test_an_untouched_store_still_verifies(self):
+        rep = self.mesh.verify_memory()
+        self.assertTrue(rep.ok, rep.reason)
+
+
+class TestExternalAnchorSink(unittest.TestCase):
+    """An anchor stored in the database an attacker owns is not an anchor. These two
+    tests are the pair that proves it."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="ledger-sink-")
+        self.db = os.path.join(self.tmp, "m.db")
+        self.sink = os.path.join(self.tmp, "anchors.jsonl")
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _seed_and_anchor(self, anchor_file=""):
+        mesh = Mesh(self.db, validator=False, anchor_file=anchor_file)
+        for i in range(6):
+            mesh.add(f"fact number {i} about the treasury")
+            if i % 2:
+                mesh.add(f"correction {i} about the treasury", supersedes=
+                         sorted(mesh._load())[0], agent_id="self")
+        res = mesh.ledger.anchor(target="test")
+        mesh.db.close()
+        return res
+
+    def _cut_and_wipe(self, cut_at=4):
+        """Attacker: delete the newest entries, repair the store to match, and erase
+        the anchor row that would have caught them."""
+        conn = _raw(self.db)
+        # only nodes whose FIRST witness is inside the cut range: a node with an
+        # earlier surviving entry would leave an orphaned witness behind, which is a
+        # sloppier attack than the one this test is about
+        orphaned = [r["node_id"] for r in conn.execute(
+            "SELECT node_id FROM ledger WHERE node_id != '' GROUP BY node_id "
+            "HAVING MIN(seq) >= ?", (cut_at,)).fetchall()]
+        # a clean cut also undoes the supersessions it removed, otherwise the
+        # surviving witness for that memory still pins its validity window and the
+        # truncation is caught as a rewrite rather than passing unnoticed
+        reverted = [r["node_id"] for r in conn.execute(
+            "SELECT node_id FROM ledger WHERE seq >= ? AND op='supersede' "
+            "AND node_id IN (SELECT node_id FROM ledger GROUP BY node_id "
+            "HAVING MIN(seq) < ?)", (cut_at, cut_at)).fetchall()]
+        conn.execute("DELETE FROM ledger WHERE seq >= ?", (cut_at,))
+        conn.execute("DELETE FROM ledger_anchor")
+        for nid in orphaned:
+            conn.execute("DELETE FROM nodes WHERE id=?", (nid,))
+        for nid in reverted:
+            row = conn.execute("SELECT meta FROM nodes WHERE id=?", (nid,)).fetchone()
+            if row is None:
+                continue
+            meta = json.loads(row["meta"])
+            meta["superseded_by"] = ""
+            meta["valid_to"] = 0.0
+            conn.execute("UPDATE nodes SET meta=? WHERE id=?", (json.dumps(meta), nid))
+        conn.commit()
+        conn.close()
+
+    def test_an_in_database_anchor_is_deleted_with_the_entries_it_protects(self):
+        res = self._seed_and_anchor()
+        self.assertEqual(res["sink"], "", "no sink configured, so none was written")
+        self._cut_and_wipe()
+        mesh = Mesh(self.db, validator=False)
+        rep = mesh.verify_memory()
+        mesh.db.close()
+        self.assertTrue(rep.ok, "honest expectation: this attack is NOT caught — the "
+                                "anchor lived in the attacker's own database")
+
+    def test_an_anchor_outside_the_store_survives_the_same_attack(self):
+        res = self._seed_and_anchor(anchor_file=self.sink)
+        self.assertEqual(res["sink"], os.path.abspath(self.sink))
+        self.assertTrue(read_anchors(self.sink)[0]["entry_hash"])
+        self._cut_and_wipe()
+        mesh = Mesh(self.db, validator=False, anchor_file=self.sink)
+        rep = mesh.verify_memory()
+        mesh.db.close()
+        self.assertFalse(rep.ok, "the sink file still claims the longer history")
+        self.assertEqual(rep.kind, "anchor")
+        self.assertIn("truncated after anchoring", rep.reason)
+
+    def test_a_garbled_sink_does_not_break_verification(self):
+        """A verifier must not be denial-of-service-able by the file it checks."""
+        self._seed_and_anchor(anchor_file=self.sink)
+        with open(self.sink, "a", encoding="utf-8") as fh:
+            fh.write("not json at all\n\n{\"entry_hash\": null}\n")
+        mesh = Mesh(self.db, validator=False, anchor_file=self.sink)
+        rep = mesh.verify_memory()
+        mesh.db.close()
+        self.assertTrue(rep.ok, rep.reason)
+        self.assertTrue(rep.anchored)

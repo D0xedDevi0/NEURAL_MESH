@@ -157,24 +157,49 @@ def _attack_insert_direct(path, mesh_arm):
     conn.close()
 
 
-def _attack_truncate_tail(path, mesh_arm, anchored: bool):
+def _attack_truncate_tail(path, mesh_arm, anchored: bool, wipe_anchor: bool = False):
     """History is cut back to an earlier prefix.
 
     The strong version: after cutting the log, the store is *repaired* to match
     it — memories whose only witness was in the cut range are removed too. What
     survives is a smaller, perfectly self-consistent store, which is exactly the
     attack a hash chain cannot see locally and an anchor can.
+
+    `wipe_anchor` models the attacker everyone should assume: one with write access
+    to the database file. The anchor row lives in that same file, so they delete it
+    with the entries it protects. An anchor that survives this must live somewhere
+    else — which is the whole point of `anchor_file`.
     """
     conn = _raw(path)
     if mesh_arm:
         n = conn.execute("SELECT COUNT(*) c FROM ledger").fetchone()["c"]
         cut = max(1, n - 2)
+        # only memories whose FIRST witness falls in the cut range: keeping a node
+        # with an earlier surviving entry would leave an orphaned witness, which is a
+        # detectably sloppier attack than the clean truncation modelled here
         orphaned = [r["node_id"] for r in conn.execute(
-            "SELECT DISTINCT node_id FROM ledger WHERE seq >= ? AND node_id != ''",
-            (cut,)).fetchall()]
+            "SELECT node_id FROM ledger WHERE node_id != '' GROUP BY node_id "
+            "HAVING MIN(seq) >= ?", (cut,)).fetchall()]
+        # memories whose supersession is cut away but whose first witness survives:
+        # the row must be reverted too, or the surviving entry pins it and the
+        # truncation is detected as a rewritten validity window rather than a cut
+        reverted = [r["node_id"] for r in conn.execute(
+            "SELECT node_id FROM ledger WHERE seq >= ? AND op='supersede' "
+            "AND node_id IN (SELECT node_id FROM ledger GROUP BY node_id "
+            "HAVING MIN(seq) < ?)", (cut, cut)).fetchall()]
         conn.execute("DELETE FROM ledger WHERE seq >= ?", (cut,))
+        if wipe_anchor:
+            conn.execute("DELETE FROM ledger_anchor")
         for nid in orphaned:
             conn.execute("DELETE FROM nodes WHERE id=?", (nid,))
+        for nid in reverted:
+            row = conn.execute("SELECT meta FROM nodes WHERE id=?", (nid,)).fetchone()
+            if row is None:
+                continue
+            meta = json.loads(row["meta"])
+            meta["superseded_by"] = ""
+            meta["valid_to"] = 0.0
+            conn.execute("UPDATE nodes SET meta=? WHERE id=?", (json.dumps(meta), nid))
     else:
         conn.execute("DELETE FROM nodes WHERE id IN (SELECT id FROM nodes ORDER BY id DESC"
                      " LIMIT 2)")
@@ -203,8 +228,13 @@ ATTACKS = [
      _attack_insert_direct, None),
     ("tail truncated (unanchored)", "the last entries cut off, prefix intact",
      lambda p, m: _attack_truncate_tail(p, m, anchored=False), None),
-    ("tail truncated (anchored)", "the same cut after the head was anchored",
-     lambda p, m: _attack_truncate_tail(p, m, anchored=True), "anchor"),
+    ("tail truncated, in-db anchor wiped",
+     "the same cut by an attacker who deletes the anchor row with it",
+     lambda p, m: _attack_truncate_tail(p, m, anchored=True, wipe_anchor=True), "anchor"),
+    ("tail truncated, anchor in an external file",
+     "the same cut against an anchor pinned outside the database",
+     lambda p, m: _attack_truncate_tail(p, m, anchored=True, wipe_anchor=True),
+     "anchor_file"),
     ("audit trail edited", "a ledger entry rewritten to reframe a write",
      _attack_edit_log_entry, "ledger-only"),
 ]
@@ -218,14 +248,14 @@ def _close(store):
         store.db.close()
 
 
-def _seed_arm(kind: str, path: str, n_facts: int = 24):
+def _seed_arm(kind: str, path: str, n_facts: int = 24, anchor_file: str = ""):
     """Same facts, same corrections, same workload in both arms."""
     if kind == "rowhash":
         store = RowHashStore(path)
         ids = [store.add(SEED_FACTS[i % len(SEED_FACTS)] + f" #{i}",
                          agent_id="alice" if i % 3 else "self") for i in range(n_facts)]
         return store, ids
-    mesh = Mesh(path, validator=False)
+    mesh = Mesh(path, validator=False, anchor_file=anchor_file)
     ids = []
     for i in range(n_facts):
         node = mesh.add(SEED_FACTS[i % len(SEED_FACTS)] + f" #{i}",
@@ -246,8 +276,12 @@ def run_attack_experiment(tmp: str) -> list[dict]:
                 row["rowhash"] = "n/a (no audit trail to edit)"
                 continue
             path = os.path.join(tmp, f"{kind}-{abs(hash(name)) % 9999}.db")
-            store, _ids = _seed_arm(kind, path)
-            if needs == "anchor" and kind == "ledger":
+            sink = os.path.join(tmp, f"{kind}-{abs(hash(name)) % 9999}.anchors.jsonl")
+            # the ledger arm always runs with the log on; the external sink is only
+            # wired up for the attack that is supposed to be defeated by it
+            store, _ids = _seed_arm(kind, path,
+                                    anchor_file=sink if needs == "anchor_file" else "")
+            if needs in ("anchor", "anchor_file") and kind == "ledger":
                 store.ledger.anchor(target="bench")
             fn(path, kind == "ledger")
             if kind == "rowhash":
@@ -466,9 +500,12 @@ def main() -> int:
     print(f"SCALE: " + ", ".join(
         f"{k} nodes -> {v['verify_ms']} ms" for k, v in results["scale"].items()))
     a = results["attribution"]
+    # `bundle_with_forged_author` is the bundle's own `ok` flag, so False means the
+    # forgery was rejected — print the question, not the raw flag
     print(f"SWARM: {a['attribution_exact']}/{a['memories']} attributed exactly "
           f"({a['attribution_accuracy']}), forged-author bundle rejected: "
-          f"{a['bundle_with_forged_author'] is False}")
+          f"{not a['bundle_with_forged_author']} "
+          f"({a['bundle_forgery_reason'] or 'no reason given'})")
 
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
     os.makedirs(out, exist_ok=True)

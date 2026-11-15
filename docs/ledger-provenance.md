@@ -1,4 +1,4 @@
-# Provenance ledger — measured behaviour *(v0.40.0)*
+# Provenance ledger — measured behaviour *(v0.41.0)*
 
 The ledger answers one question the rest of the mesh cannot: **was this the memory that was
 written, or has something changed it since?** `security.ContentValidator` judges what content
@@ -27,13 +27,26 @@ arm's verifier returned a failure; `MISSED` means it returned clean.
 | Attack | Row-hash baseline | Provenance ledger | Reported as |
 | --- | --- | --- | --- |
 | content edited in place | caught | caught | `content` |
-| authorship laundered (metadata only) | **MISSED** | caught | `content` |
-| validity rewritten (live fact marked superseded) | **MISSED** | caught | `content` |
+| authorship laundered (metadata only) | **MISSED** | caught | `attribution` |
+| validity rewritten (live fact marked superseded) | **MISSED** | caught | `validity` |
 | memory deleted from the store | **MISSED** | caught | `orphan` |
 | memory inserted behind the API | **MISSED** | caught | `coverage` |
 | tail truncated, unanchored | MISSED | **MISSED** | — |
-| tail truncated after anchoring | **MISSED** | caught | `anchor` |
+| tail truncated, in-database anchor deleted with it | MISSED | **MISSED** | — |
+| tail truncated, anchor in a file outside the store | MISSED | caught | `anchor` |
 | audit trail itself edited | n/a (no trail) | caught | `chain` |
+
+Catching a metadata-only edit is not the same as *describing* it, so the report now
+discriminates: an edit that moves only `agent_id` is an `attribution` failure, one that
+moves only the validity window or `superseded_by` is a `validity` failure, and the text
+follows with the field names that diverged (`[fields: valid_to, superseded_by]`).
+Attribution is computed from per-field digests recorded at write time; entries written
+before that existed fall back to the coarse `content` message rather than guessing.
+
+An earlier version of this table claimed anchored truncation was caught. It was — by
+accident. That attack deleted the truncated entries but left the anchor row behind, and a
+competent attacker deletes both. The row above is the corrected, measured result: an anchor
+stored in the database the attacker owns protects nothing.
 
 **Six classes the ledger catches that a per-row hash structurally cannot.** The two `MISSED`
 entries are the point of the honest reporting, not an oversight:
@@ -48,9 +61,16 @@ entries are the point of the honest reporting, not an oversight:
 
 | | |
 | --- | --- |
-| Append overhead, interleaved A/B at the same n | **+2,000 µs/add (1.0 %)** |
-| Ledger's own write cost, mesh add path excluded | 354 entries/s (**2,823 µs each**) |
-| Storage | ~478 bytes per entry |
+| Append overhead, interleaved A/B at the same n | **1.0 % – 3.3 % across repeated runs** |
+| Ledger's own write cost, mesh add path excluded | 300–354 entries/s (**2,824–3,317 µs each**) |
+| Storage | ~819 bytes per entry (478 before the per-field digests) |
+
+The overhead is quoted as a bracket because repeating the identical interleaved experiment on
+this container gave 1.0 %, 2.0 %, 2.3 %, 2.5 % and 3.3 % — the spread across runs is larger
+than the effect being measured, which is the same reason the original sequential A/B (which
+reported −4.7 %) was rejected. What reproduces is the ledger's *own* append cost
+(2,824–3,317 µs/event over four runs, ±8 %) and storage. Report the bracket, not a point
+estimate of a difference this container cannot resolve.
 
 Read these together with one caveat: `Mesh.add` is itself O(n²) over the store (auto-linking and
 corroboration), dominating the number — at n=120 an `add` costs ~200 ms. The ledger accounts for
@@ -69,9 +89,12 @@ percentage — is the figure to trust.
 
 | Store size | Verify time | Throughput | Result |
 | --- | --- | --- | --- |
-| 120 entries / ~120 nodes | 5.5 ms | ~22,000 entries/s | ok |
-| 100 nodes | 5.0 ms | — | ok |
-| 250 nodes | 12.2 ms | ~20,500 nodes/s | ok |
+| 120 entries / ~120 nodes | 5.5–9.0 ms | 13,300–22,000 entries/s | ok |
+| 100 nodes | 5.0–5.4 ms | — | ok |
+| 250 nodes | 12.2–16.9 ms | ~20,500 nodes/s | ok |
+
+`Mesh.add` is O(n²), so absolute add times grow with the store and any ratio against them
+drifts with it — another reason the cost numbers above are a bracket.
 
 Verification is linear in entries and costs milliseconds at the sizes a single agent's store
 reaches. The live production mesh (~2.5k nodes) has not been measured end-to-end; the slope
@@ -101,16 +124,45 @@ independent handles. `tests/test_ledger.py::test_concurrent_handles_do_not_fork_
 offline (`verify_bundle` → not ok), which is what lets one agent check another's history without
 trusting the sender.
 
+## Anchoring outside the store
+
+`anchor_file` (CLI: `--anchors PATH`) pins each anchor as one JSON line in an append-only
+file outside the database, and verification then judges the log against **every** anchor it
+can find, sinks before the in-database row. Re-anchoring appends rather than replaces, so an
+attacker who can only truncate is contradicted by the later lines.
+
+```
+mesh ledger --db mesh.db anchor  --target base-8453 --anchors /elsewhere/anchors.jsonl
+mesh ledger --db mesh.db verify  --anchors /elsewhere/anchors.jsonl
+```
+
+Measured: after cutting the log to 4 entries *and* deleting the `ledger_anchor` row, the
+in-database anchor reports nothing and the external sink reports
+`log ends at #4 but head #6 was anchored (anchored in anchors.jsonl) — entries were truncated
+after anchoring`, kind `anchor`. The sink closes the blind spot for exactly as long as it
+lives somewhere the attacker cannot write — another host, a git-committed file, a chain.
+
 ## Honest limits
 
 1. **Integrity, not truth.** A lie is signed as faithfully as a fact. The ledger proves the
    record was not altered; it says nothing about whether the claim is correct.
-2. **Unanchored tail truncation is invisible locally** (measured above). Anchor the head.
-3. **Field-level attribution is coarse.** The attestation digest covers content, author,
-   validity window and supersession together, so a metadata-only edit currently reports as
-   `content`. The failure names the memory and the entry; it does not yet say *which* field
-   moved. Roadmap.
+2. **Unanchored tail truncation is invisible locally** (measured above), and an anchor stored
+   in the same database is no better. Only a sink outside the attacker's write scope detects
+   it — the mechanism exists, but nothing in this repo places that file for you.
+3. **Field-level attribution describes, it does not prove.** The field names come from digests
+   recorded at write time, so they are as trustworthy as the entry itself — but they identify
+   *which* attested field moved, not what it used to say. The prior value is not recoverable
+   from a hash, by design.
 4. **A privileged attacker who rewrites the whole database** — log included — is detectable only
    because the head was anchored somewhere they do not control.
 5. **Not measured at production scale.** The live mesh's ~2.5k-node store has not been
    benchmarked; the numbers above are from stores of 100–250 nodes.
+6. **Cost figures are a bracket, not a point estimate.** Repeated runs of the same interleaved
+   experiment differ by more than the effect (1.0 %–3.3 %); only the append cost and storage
+   reproduce. Treat any single overhead percentage from this container as noise.
+7. **A truncation must be reconciled to pass.** Cutting the tail also has to undo the
+   supersessions it removed and drop memories whose first witness was in the cut; otherwise
+   the surviving entry still pins the row and the cut is caught as a `validity` rewrite. That
+   is a real obstacle for an attacker (the log constrains the *current* state of every memory
+   it still covers, not just its history), and it is why the attack above models the
+   reconciliation explicitly instead of getting a free win from a sloppy cut.

@@ -159,7 +159,9 @@ def cmd_rust_info(args):
 def cmd_ledger(args):
     """Provenance ledger operations — read-only except bootstrap/anchor/export."""
     from neural_mesh import Mesh
-    mesh = Mesh(args.db or "mesh.db")
+    # --anchors points at an anchor sink OUTSIDE the store: verification then judges
+    # the log against a record the database's own owner cannot rewrite.
+    mesh = Mesh(args.db or "mesh.db", anchor_file=getattr(args, "anchors", "") or "")
     action = args.action
     if action == "verify":
         rep = mesh.verify_memory()
@@ -175,7 +177,12 @@ def cmd_ledger(args):
             return 2
         print(json.dumps(mesh.provenance_of(args.node), indent=2))
     elif action == "anchor":
-        print(json.dumps(mesh.ledger.anchor(target=args.target), indent=2))
+        res = mesh.ledger.anchor(target=args.target)
+        print(json.dumps(res, indent=2))
+        if not res.get("sink"):
+            print("note: this anchor was written into the database itself — set "
+                  "--anchors PATH to pin it somewhere the store's owner cannot "
+                  "rewrite", file=sys.stderr)
     elif action == "anchor-payload":
         print(json.dumps(mesh.ledger.anchor_payload(), indent=2))
     elif action == "bootstrap":
@@ -196,7 +203,7 @@ def cmd_ledger(args):
 def main():
     p = argparse.ArgumentParser(
         prog="neural-mesh",
-        description="Self-organizing agentic memory mesh — v0.40.0")
+        description="Self-organizing agentic memory mesh — v0.41.0")
     sp = p.add_subparsers(dest="cmd")
 
     # export
@@ -261,6 +268,8 @@ def main():
     p_ledger.add_argument("--out", default="", help="output file (export)")
     p_ledger.add_argument("--limit", type=int, default=500, help="entries to export")
     p_ledger.add_argument("--target", default="local", help="anchor target label")
+    p_ledger.add_argument("--anchors", default="",
+                          help="anchor sink file outside the store (verify/anchor)")
 
     # version
     sp.add_parser("version", help="Print version")

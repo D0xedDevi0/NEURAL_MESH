@@ -1086,6 +1086,71 @@ memory lane.
 
 ## 📜 Release notes
 
+### 🟦 v0.41.0 — Anchoring outside the store, and a report that names the field (2026-11-15)
+
+Two fixes to v0.40.0's own claims, both found by attacking it rather than describing it.
+
+**The anchored-truncation claim was luck.** v0.40.0 reported that a truncated log was caught
+"because the head was anchored" — but the anchor row lived in the *same database* as the
+entries it protected, and the bench's attack simply never deleted it. An attacker with write
+access deletes both. The measured correction: with the in-database anchor wiped, a clean
+truncation is **MISSED**, exactly like the unanchored case.
+
+The remedy is a sink the attacker does not own — `anchor_file` / `--anchors PATH` — which
+appends one JSON line per anchor outside the store, so later lines contradict an earlier cut:
+
+```python
+mesh = Mesh("mesh.db", anchor_file="/elsewhere/anchors.jsonl")
+mesh.ledger.anchor(target="base-8453")
+mesh.verify_memory()   # judges against every anchor it can find, sinks first
+```
+
+```
+mesh ledger --db mesh.db anchor --target base-8453 --anchors /elsewhere/anchors.jsonl
+mesh ledger --db mesh.db verify --anchors /elsewhere/anchors.jsonl
+```
+
+Measured: cut the log to 4 of 6 entries *and* delete `ledger_anchor` — the in-database anchor
+reports nothing, the external sink reports `kind: anchor`,
+`"log ends at #4 but head #6 was anchored (anchored in anchors.jsonl) — entries were truncated
+after anchoring"`. A garbled sink line is skipped, never fatal: a verifier must not be
+deniable by the file it checks.
+
+**A digest that says *something* changed is not a report.** The attested digest covered
+content, author, validity and supersession together, so every metadata edit read as `content`.
+The ledger now records per-field digests at write time and classifies the divergence:
+
+| What moved | Reported as |
+|---|---|
+| `content`, `type` | `content` |
+| `agent_id`, `by`, `conflict_group` | `attribution` — "attributed to someone other than who asserted it" |
+| `valid_from`, `valid_to`, `superseded_by` | `validity` — "its validity window or supersession was rewritten" |
+
+The failure carries `fields`, so `verify_memory()` on a laundered author returns
+`kind='attribution'`, `fields=['agent_id']`. Entries predating the change fall back to the
+coarse message instead of guessing.
+
+**Two bugs the attack modelling exposed:**
+
+- A clean truncation must also *undo the supersessions it removed* — otherwise the memory's
+  surviving entry still pins its validity window and the cut is caught as a `validity`
+  rewrite. That is a genuine obstacle for an attacker (the log constrains the current state of
+  every memory it still covers), and it is now modelled explicitly in the bench and tests
+  rather than handing the ledger a free win.
+- `_field` rounded floats but did not coerce ints, so `valid_to=0` and `valid_to=0.0` hashed
+  differently and an int/float mix read as tampering. Numeric attested fields are now compared
+  as floats.
+
+Test suite: `447 passed, 14 skipped` (up from 440 — seven new tests cover field-level
+classification, the external sink, and the honest case where the in-database anchor protects
+nothing).
+
+Storage grew from ~478 to ~819 bytes per entry: each entry now carries its per-field digests.
+The append overhead is quoted as **1.0 %–3.3 %** rather than a single number — repeating the
+identical interleaved experiment gave 1.0 %, 2.0 %, 2.3 %, 2.5 % and 3.3 %, a spread wider
+than the effect, which is the same reason the original sequential A/B (−4.7 %) was thrown out.
+The ledger's own append cost does reproduce: **2,824–3,317 µs/event**, ~300–354 appends/s.
+
 ### 🟦 v0.40.0 — Provenance Ledger: memory you can *prove* was not rewritten (2026-11-15)
 
 Every other security layer in the mesh judges **what a memory says** — `ContentValidator`

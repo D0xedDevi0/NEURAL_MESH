@@ -61,6 +61,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field, asdict
 from typing import Any, Callable, Iterable
@@ -138,9 +139,14 @@ def _field(node: Any, name: str) -> Any:
         value = getattr(node, name, "")
     if hasattr(value, "value"):          # MemoryType enum -> "semantic"
         value = value.value
-    if isinstance(value, float):
-        # Round so a JSON round-trip can never produce a spurious mismatch.
-        value = round(value, 6)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        # Numeric fields are compared as floats: `0` and `0.0` are the same time in
+        # the same column, and json.dumps renders them differently ("0" vs "0.0"),
+        # so an int/float mix would otherwise read as tampering. Rounding above the
+        # microsecond keeps a JSON round-trip from doing the same.
+        return round(float(value), 6)
     return value
 
 
@@ -152,6 +158,89 @@ def attested_digest(node: Any) -> str:
     in-memory cache.
     """
     return hashlib.sha256(_canonical({f: _field(node, f) for f in ATTESTED_FIELDS})).hexdigest()
+
+
+#: Which attested fields mean what, so a mismatch can be described precisely.
+CONTENT_FIELDS = ("content", "type")
+ATTRIBUTION_FIELDS = ("agent_id", "by", "conflict_group")
+VALIDITY_FIELDS = ("valid_from", "valid_to", "superseded_by")
+
+
+def field_digests(node: Any) -> dict[str, str]:
+    """Per-field digests of the attested fields.
+
+    Committing to a single combined digest answers "did anything change?" but not
+    "what changed?" — and for a log whose job is to say who did what, the second
+    question is the one that matters: a relabelled author is a different act from a
+    rewritten fact.
+    """
+    out: dict[str, str] = {}
+    for f in ATTESTED_FIELDS:
+        try:
+            out[f] = hashlib.sha256(_canonical(_field(node, f))).hexdigest()[:16]
+        except Exception:
+            continue
+    return out
+
+
+def classify_fields(moved: list[str]) -> tuple[str, str]:
+    """(kind, plain-language description) for the fields that diverged."""
+    if not moved:
+        return "content", "it was edited in place"
+    names = set(moved)
+    if names <= set(CONTENT_FIELDS):
+        return "content", "its content was rewritten in place"
+    if names <= set(ATTRIBUTION_FIELDS):
+        return "attribution", ("it is now attributed to someone other than who "
+                               "asserted it")
+    if names <= set(VALIDITY_FIELDS):
+        return "validity", ("its validity window or supersession was rewritten")
+    return "content", "its attested fields were rewritten in place"
+
+
+def read_anchors(path: str) -> list[dict]:
+    """Anchor records from an append-only sink file (one JSON object per line).
+
+    Tolerant by design: a missing file is simply "no anchors", and a malformed or
+    blank line is skipped rather than aborting verification. A verifier must never
+    be turned into a denial-of-service by the thing it is checking.
+    """
+    if not path or not os.path.exists(path):
+        return []
+    out: list[dict] = []
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    rec = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(rec, dict) and rec.get("entry_hash"):
+                    rec["_sink"] = path
+                    out.append(rec)
+    except OSError:
+        return out
+    return out
+
+
+def append_anchor(path: str, record: dict) -> str:
+    """Append one anchor to a sink file, durably. Returns the line written.
+
+    Append-only on purpose: re-anchoring adds a line, so an attacker who can only
+    truncate finds the *later* anchors still claiming a longer history.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    line = json.dumps(record, sort_keys=True, separators=(",", ":"), default=str)
+    with open(path, "a", encoding="utf-8") as fh:
+        fh.write(line + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    return line
 
 
 def merkle_root(hashes: Iterable[str]) -> str:
@@ -226,6 +315,7 @@ class VerifyReport:
     adopted: int = 0
     advice: str = ""
     head: dict = field(default_factory=dict)
+    fields: list = field(default_factory=list)   # attested fields that diverged
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -254,11 +344,16 @@ class ProvenanceLedger:
     """
 
     def __init__(self, get_conn: Callable[[], Any], clock: Callable[[], float] = time.time,
-                 lock: Any = None):
+                 lock: Any = None, anchor_file: str = ""):
         self._get_conn = get_conn
         self._clock = clock
         self._lock = lock
         self._digest_cache: dict[str, str] = {}
+        # An anchor the attacker cannot rewrite. The in-database anchor record is
+        # convenient but useless against anyone who can write the database — they
+        # delete it along with the entries it protects. A sink outside the store
+        # (another host, a git-committed file, a chain) is the actual remedy.
+        self.anchor_file = anchor_file
         self._ensure_schema()
 
     # -- storage helpers ----------------------------------------------------
@@ -370,7 +465,8 @@ class ProvenanceLedger:
         return self.append(
             op=op, node_id=node_id, agent_id=actor or author or "self",
             source=source or str(_field(node, "provenance") or ""), digest=digest,
-            detail={"by": _field(node, "by"), "author": author})
+            detail={"by": _field(node, "by"), "author": author,
+                    "fields": field_digests(node)})
 
     # -- read ---------------------------------------------------------------
     def tail(self) -> LedgerEntry | None:
@@ -512,18 +608,34 @@ class ProvenanceLedger:
         # I4 — the anchored prefix, before the store comparison: a truncated log
         # is the more specific diagnosis, and it is what makes the difference
         # between "someone edited a memory" and "someone cut the history".
-        anchor = self.anchor_record()
-        if anchor and anchor.get("seq"):
+        for anchor in self.anchor_records():
+            if not anchor.get("seq"):
+                continue
+            where = f" (anchored in {anchor['_sink']})" if anchor.get("_sink") else ""
             if last_seq < anchor["seq"]:
                 return self._fail(rep, anchor["seq"], "anchor", "",
                                   f"log ends at #{last_seq} but head #{anchor['seq']} "
-                                  f"was anchored — entries were truncated after anchoring")
+                                  f"was anchored{where} — entries were truncated after "
+                                  f"anchoring")
             at = self.conn.execute("SELECT entry_hash FROM ledger WHERE seq=?",
                                    (anchor["seq"],)).fetchone()
             if at is None or at["entry_hash"] != anchor["entry_hash"]:
                 return self._fail(rep, anchor["seq"], "anchor", "",
                                   f"anchored hash at #{anchor['seq']} does not match the "
-                                  f"stored entry — history was rewritten after anchoring")
+                                  f"stored entry{where} — history was rewritten after "
+                                  f"anchoring")
+            # The merkle root commits to the whole prefix, so it also catches a
+            # rewrite that left the head hash alone.
+            if anchor.get("merkle_root") and anchor.get("entries"):
+                want_n = int(anchor["entries"])
+                got = [r["entry_hash"] for r in self.conn.execute(
+                    "SELECT entry_hash FROM ledger ORDER BY seq ASC LIMIT ?", (want_n,)).fetchall()]
+                if len(got) < want_n or merkle_root(got) != anchor["merkle_root"]:
+                    return self._fail(rep, anchor["seq"], "anchor", "",
+                                      f"merkle root of the first {want_n} entries does not "
+                                      f"match the anchored root{where} — the anchored "
+                                      f"prefix was rewritten")
+            rep.anchored, rep.anchor_seq = True, anchor["seq"]
 
         # I2 / I3 / I5 — the live store against what was witnessed.
         if deep:
@@ -558,9 +670,20 @@ class ProvenanceLedger:
                 if entry.op == "adopt":
                     adopted += 1
                 if attested_digest(node) != entry.digest:
-                    return self._fail(rep, entry.seq, "content", nid,
-                                      f"memory {nid[:8]} no longer matches the digest "
-                                      f"witnessed at entry #{entry.seq} (edited in place)")
+                    # Per-field digests were recorded from the first version of the
+                    # scheme onward; older entries fall back to the coarse message.
+                    before = (entry.detail or {}).get("fields") or {}
+                    now = field_digests(node)
+                    moved = sorted(f for f in ATTESTED_FIELDS
+                                   if before.get(f) and now.get(f) != before[f])
+                    kind, what = classify_fields(moved)
+                    rep.fields = moved
+                    return self._fail(
+                        rep, entry.seq, kind, nid,
+                        f"memory {nid[:8]} no longer matches the digest witnessed at "
+                        f"entry #{entry.seq} — {what}"
+                        + (f" [fields: {', '.join(moved)}]" if moved
+                           else " (edited in place)"))
             rep.adopted = adopted
             if unexplained:
                 rep.ok = False
@@ -689,11 +812,44 @@ class ProvenanceLedger:
             " VALUES (1,?,?,?,?,?,?)",
             (tail.seq, tail.entry_hash, root, ts, target, payload))
         self.conn.commit()
+        record = {"scheme": ANCHOR_SCHEME, "ledger": self.chain_id(),
+                  "chain_id": self.chain_id(), "seq": tail.seq,
+                  "entry_hash": tail.entry_hash, "merkle_root": root,
+                  "entries": len(hashes), "ts": ts, "target": target, "detail": detail or {}}
+        sink = ""
+        if self.anchor_file:
+            append_anchor(self.anchor_file, record)
+            sink = os.path.abspath(self.anchor_file)
         return {"anchored": True, "seq": tail.seq, "entry_hash": tail.entry_hash,
                 "merkle_root": root, "target": target, "ts": ts,
                 "covers_entries": len(hashes), "chain_id": self.chain_id(),
-                "note": "the anchored prefix cannot be rewritten or truncated below it "
-                        "without verification failing"}
+                "sink": sink,
+                "note": ("the anchored prefix cannot be rewritten or truncated below it "
+                         "without verification failing"
+                         + ("" if sink else " — but this anchor lives in the database "
+                            "itself, so an attacker with write access can delete it; "
+                            "set anchor_file to pin it outside the store"))}
+
+    def anchor_records(self) -> list[dict]:
+        """All anchors this ledger can be judged against: the external sink first
+        (it is the one an attacker is least likely to control), then the in-database
+        record. Deduplicated by (seq, entry_hash)."""
+        out: list[dict] = []
+        seen: set[tuple] = set()
+        for rec in read_anchors(self.anchor_file) if self.anchor_file else []:
+            key = (rec.get("seq"), rec.get("entry_hash"))
+            if key not in seen:
+                seen.add(key)
+                out.append(rec)
+        local = self.anchor_record()
+        if local and local.get("seq"):
+            key = (local["seq"], local["entry_hash"])
+            if key not in seen:
+                seen.add(key)
+                local = dict(local)
+                local["_sink"] = ""
+                out.append(local)
+        return out
 
     def anchor_payload(self, detail: dict | None = None) -> dict:
         """The exact thing to publish, including Base calldata.

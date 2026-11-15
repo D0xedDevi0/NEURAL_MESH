@@ -17,8 +17,11 @@ Run `python -m neural_mesh.demo` to see it work.
 
 from .core import Mesh, MemoryType
 from .ledger import (ProvenanceLedger, LedgerEntry, VerifyReport, SCHEME,
-                     ANCHOR_SCHEME, BASE_CHAIN_ID, ATTEST_OPS,
-                     content_digest, attested_digest, merkle_root)
+                     ANCHOR_SCHEME, BASE_CHAIN_ID, ATTEST_OPS, FORGET_OP,
+                     CONTENT_FIELDS, ATTRIBUTION_FIELDS, VALIDITY_FIELDS,
+                     content_digest, attested_digest, merkle_root,
+                     field_digests, classify_fields,
+                     read_anchors, append_anchor)
 from .meshfile import export_mesh, import_mesh
 from .sharing import merge_peer_mesh, consensus_rank, PeerPolicy, export_for_peer
 from .lora_dataset import write_jsonl, write_hf_jsonl, write_weights, summarize
@@ -111,4 +114,4 @@ __all__ = ["Mesh", "MemoryType", "export_mesh", "import_mesh",
            "export_artifact", "verify_artifact", "import_artifact",
            "serialize", "deserialize",
            "learn_plan", "record_attempt", "gaps_remaining"]
-__version__ = "0.40.0"
+__version__ = "0.41.0"
