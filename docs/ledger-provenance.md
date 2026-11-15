@@ -72,8 +72,8 @@ reported −4.7 %) was rejected. What reproduces is the ledger's *own* append co
 (2,824–3,317 µs/event over four runs, ±8 %) and storage. Report the bracket, not a point
 estimate of a difference this container cannot resolve.
 
-Read these together with one caveat: `Mesh.add` is itself O(n²) over the store (auto-linking and
-corroboration), dominating the number — at n=120 an `add` costs ~200 ms. The ledger accounts for
+Read these together with one caveat: `Mesh.add` dominates the number — at n=105 an `add` costs
+~350 ms, and it grows with the store (see "Does it scale?" below). The ledger accounts for
 a low single-digit percentage of that (the bracket above). The raw figure is the honest per-event price: each witnessed event is its own
 committed transaction, which is what makes it durable (and what makes it ~2.8 ms).
 
@@ -119,8 +119,41 @@ payload freely, but read its timings against that load figure rather than as the
 The artifact's raw append cost, for instance, reads 12,642 µs/event against 2,824–3,317 µs across
 quieter runs.
 
-`Mesh.add` is O(n²), so absolute add times grow with the store and any ratio against them
-drifts with it — another reason the cost numbers above are a bracket.
+`Mesh.add` grows with the store, so absolute add times drift and any ratio against them drifts
+with it — another reason the cost numbers above are a bracket. See "Does it scale?" for the
+measured curve.
+
+## Does it scale?
+
+The ledger's own cost is a constant per event, but a ledger is only ever as cheap as the write it
+witnesses, so the question that decides whether this can run in front of a live agent is what
+`Mesh.add` itself costs as the store fills. The docs originally called it "O(n²)"; that is true of
+*building* a store (n adds, each aware of the nodes before it) but wrong as stated for a single
+add. Measured on a just-rebooted idle host:
+
+| Store size | Mean add | Min / max | Step exponent |
+| --- | --- | --- | --- |
+| 30 nodes | 33.7 ms | 31.0 / 38.1 | — |
+| 55 nodes | 180.2 ms | 167.9 / 199.5 | |
+| 105 nodes | 353.2 ms | 334.6 / 371.5 | ~1.04 |
+| 205 nodes | 740.2 ms | 710.1 / 793.9 | ~1.11 |
+
+From n=55 the per-add cost is **linear** in store size — a fitted exponent of ~1.05, i.e. roughly
+**3.5 ms per node** — not quadratic. Two qualifications, both load-related:
+
+- Host load rose during the ladder (0.4 → ~10), which *inflates* the later points, so ~1.05 is an
+  upper bound and the true exponent may be lower.
+- The n=30 point is off-trend (a nearly empty store has almost no links to compare against), so a
+  fit over all points reports ~1.5 and a fit over the tail reports ~1.05. Quote the tail.
+
+Extrapolating that linear term: **a single add at the live ~2,500 nodes costs on the order of 9 s**
+(upper bound from the loaded points; a quieter host would be a few seconds). Every write an agent
+makes would block on that. The honest conclusion is therefore not "the ledger is slow" — the
+ledger is a fixed ~2.8 ms — but that **the memory store cannot be put in front of a live agent at
+that scale until add cost is fixed** (incremental or approximate-neighbour link search, a cap on
+candidates per add, or batched linking), and that this is a linear, tractable problem rather than
+the quadratic one the old wording implied. Measured numbers for the fix are not in this document
+because the fix has not been implemented.
 
 Verification is linear in entries and costs milliseconds at the sizes a single agent's store
 reaches. The live production mesh (~2.5k nodes) has not been measured end-to-end; the slope

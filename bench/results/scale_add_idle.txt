@@ -1,0 +1,5 @@
+n=   30  add      33.7 ms   (min 31.0, max 38.1)
+n=   55  add     180.2 ms   (min 167.9, max 199.5)
+n=  105  add     353.2 ms   (min 334.6, max 371.5)
+n=  205  add     740.2 ms   (min 710.1, max 793.9)
+EXIT=143

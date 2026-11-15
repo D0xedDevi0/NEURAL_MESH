@@ -1151,6 +1151,19 @@ identical interleaved experiment gave 1.0 %, 2.0 %, 2.3 %, 2.5 % and 3.3 %, a sp
 than the effect, which is the same reason the original sequential A/B (−4.7 %) was thrown out.
 The ledger's own append cost does reproduce: **2,824–3,317 µs/event**, ~300–354 appends/s.
 
+**The scaling question, measured — and it blocks the live install.** The ledger is a fixed
+~2.8 ms per event, so the deciding cost is the write it witnesses. The docs had called `Mesh.add`
+"O(n²)"; that is true of *building* a store, not of a single add. Measured on a freshly rebooted
+idle host: 33.7 ms at n=30, 180.2 ms at n=55, 353.2 ms at n=105, 740.2 ms at n=205 — a tail
+exponent of **~1.05**, i.e. about **3.5 ms per node**, linear rather than quadratic.
+
+Extrapolating that: a single add at the live mesh's ~2,500 nodes costs on the order of **9 s**
+(upper bound — host load inflated the later points). Every write an agent makes would block on
+that, so the store **cannot be put in front of a live agent at that scale until add cost is fixed**
+(incremental/approximate-neighbour link search, a candidate cap per add, or batched linking). That
+is a linear, tractable problem, unlike the quadratic one the old wording implied — but the fix is
+not written yet, and the number is an extrapolation from n=205, not a measurement at 2,500.
+
 ### 🟦 v0.40.0 — Provenance Ledger: memory you can *prove* was not rewritten (2026-11-15)
 
 Every other security layer in the mesh judges **what a memory says** — `ContentValidator`
