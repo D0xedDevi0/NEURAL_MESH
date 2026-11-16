@@ -24,6 +24,8 @@ REPS = 5
 LIVE_SCALE = 2500
 # Above this much hypervisor steal, the run is measuring the host, not the code.
 STEAL_LIMIT_PCT = 15.0
+# Above this relative error, the points are not described by a power law at all.
+MAX_FIT_ERROR = 0.5
 
 
 def cpu_counters():
@@ -105,7 +107,13 @@ def main() -> int:
     out = {
         "sizes": SIZES, "reps": REPS, "points": points,
         "fitted_exponent": round(slope, 3) if slope == slope else None,
-        "interpretation": ("n/a — too few points to fit" if slope != slope else
+        # Bands must not flatter the data. An exponent below ~0.8 is not "linear" - work
+        # that accumulates per node cannot get cheaper per add as the store grows, so a
+        # sub-linear slope means the run was dominated by something else (on this host:
+        # steal, which made a ladder read 784 -> 1951 -> 484 -> 957 -> 2458 ms and fit a
+        # slope of 0.25). Say that instead of printing a reassuring word.
+        "interpretation": ("n/a - too few points to fit" if slope != slope else
+                           "sub-linear / not a power law - run dominated by host noise" if slope < 0.8 else
                            "linear" if slope < 1.35 else
                            "super-linear, sub-quadratic" if slope < 1.8 else
                            "quadratic or worse"),
@@ -121,7 +129,10 @@ def main() -> int:
         "wall_seconds": round(time.perf_counter() - t_start, 1),
     }
     worst_steal = max(p["steal_pct"] for p in points)
-    trusted = worst_steal <= STEAL_LIMIT_PCT
+    # A fit the data cannot support is not evidence either: 129% error means the curve is
+    # not a power law, so no exponent should be published from it.
+    fit_ok = worst == worst and worst <= MAX_FIT_ERROR
+    trusted = worst_steal <= STEAL_LIMIT_PCT and fit_ok
     out["worst_steal_pct"] = worst_steal
     out["trustworthy"] = trusted
     out["steal_limit_pct"] = STEAL_LIMIT_PCT
@@ -137,10 +148,15 @@ def main() -> int:
         print(f"\nVERDICT: too few points to fit an exponent "
               f"({len(points)} point(s)). Load at end {out['loadavg_at_end']}.")
     print(f"\nsteal check: worst point {worst_steal:.1f}% (limit {STEAL_LIMIT_PCT}%)")
+    print(f"fit check:   worst error {worst * 100:.1f}% (limit {MAX_FIT_ERROR * 100:.0f}%)")
     if not trusted:
-        print("DEGRADED: the hypervisor took this much CPU away from the VM during the "
-              "run, so these times describe the host's mood, not Mesh.add. Refusing to "
-              "publish the curve — rerun when steal is low (watch `top` for %st).")
+        why = ("the hypervisor took this much CPU away from the VM during the run, so these "
+               "times describe the host's mood, not Mesh.add"
+               if worst_steal > STEAL_LIMIT_PCT else
+               "the points are not described by any power law, so no exponent can be read "
+               "from them")
+        print(f"DEGRADED: {why}. Refusing to publish the curve — rerun when steal is low "
+              f"(watch `top` for %st).")
         return 3
 
     with open("/opt/data/cache/scratch/scale_add.json", "w") as fh:
