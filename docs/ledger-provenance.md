@@ -129,36 +129,54 @@ The ledger's own cost is a constant per event, but a ledger is only ever as chea
 witnesses, so the question that decides whether this can run in front of a live agent is what
 `Mesh.add` itself costs as the store fills. The docs originally called it "O(n²)"; that is true of
 *building* a store (n adds, each aware of the nodes before it) but wrong as stated for a single
-add. Measured on a just-rebooted idle host:
+add.
 
-| Store size | Mean add | Min / max | Step exponent |
-| --- | --- | --- | --- |
-| 30 nodes | 33.7 ms | 31.0 / 38.1 | — |
-<!-- the ladder above was taken before steal was instrumented; read the caveats below -->
-| 55 nodes | 180.2 ms | 167.9 / 199.5 | |
-| 105 nodes | 353.2 ms | 334.6 / 371.5 | ~1.04 |
-| 205 nodes | 740.2 ms | 710.1 / 793.9 | ~1.11 |
+**The ledgers were never the problem — the transactions were.** Profiling an add (n=400, idle host,
+0.2% steal) showed `sqlite3.commit` at **80%** of it: auto-linking rewrote every linked neighbour in
+its own transaction, 411 REPLACE+commit per add, 20.6 s of a 25.8 s run. The full-table load was 5%
+and the cosine loop 2.5% — both the "obvious" targets were noise next to the fsync storm.
 
-From n=55 the per-add cost is **linear** in store size — a fitted exponent of ~1.05, i.e. roughly
-**3.5 ms per node** — not quadratic. Two qualifications, both load-related:
+v0.41 batches those writes into one transaction per add (`_save_many`). The topology is unchanged
+(same threshold, same cosine, same skip of superseded nodes) and `tests/test_autolink_batching.py`
+pins that against a frozen copy of the pre-fix writer, comparing the graph as read back from SQLite.
+Same corpus, same host, n=400:
 
-- **The host steals CPU.** Sampling `/proc/stat` / `top` during this work showed **51–64% steal**
-  (`%st`) with our own usage at 2–6% and idle at 32–40% — the hypervisor takes over half the
-  machine and none of it is ours. That inflates the later ladder points, so ~1.05 is an upper
-  bound; two consecutive adds at the same n have been observed at 8.7 ms and 166.5 ms, a 19×
-  spread that is the host, not the code. The probe now records steal per point and **refuses to
-  publish a curve** measured under more than 15% steal.
-- The n=30 point is off-trend (a nearly empty store has almost no links to compare against), so a
-  fit over all points reports ~1.5 and a fit over the tail reports ~1.05. Quote the tail.
+| | before v0.41 | after v0.41 |
+| --- | --- | --- |
+| Per add (n=400) | 1294 ms | **148 ms** |
+| Commits per add | 411 | **3** |
+| Share of the add spent in `commit` | 80% | **3.8%** |
 
-Extrapolating that linear term: **a single add at the live ~2,500 nodes costs on the order of 9 s**
-(upper bound from the loaded points; a quieter host would be a few seconds). Every write an agent
-makes would block on that. The honest conclusion is therefore not "the ledger is slow" — the
-ledger is a fixed ~2.8 ms — but that **the memory store cannot be put in front of a live agent at
-that scale until add cost is fixed** (incremental or approximate-neighbour link search, a cap on
-candidates per add, or batched linking), and that this is a linear, tractable problem rather than
-the quadratic one the old wording implied. Measured numbers for the fix are not in this document
-because the fix has not been implemented.
+The steal-gated ladder (`bench/scale_add_probe.py`; worst point 1.2% steal, the first ladder it
+will publish) then reads:
+
+| Store size | Before (steal uninstrumented) | After (steal-gated) |
+| --- | --- | --- |
+| 30 nodes | 33.7 ms | 10.1 ms |
+| 55 nodes | 180.2 ms | 22.2 ms |
+| 105 nodes | 353.2 ms | 42.6 ms |
+| 205 nodes | 740.2 ms | **92.4 ms** |
+| 405 nodes | — | 290.5 ms |
+
+Two corrections to what this document said before, both honesty rather than news: those "before"
+points were measured under **51–64% hypervisor steal** (our own usage 2–6%), which is why they were
+an upper bound; and the fitted exponent on the clean curve is **1.25** (tail 1.28), **not ~1.05**.
+The cost is superlinear, and at that exponent an add at the live ~2,500 nodes is **~2.5 s** — an
+extrapolation from n=405, not a measurement at 2,500.
+
+The reason it stays superlinear is the *bytes*, not the transactions. In the ladder's dense corpus
+(n=200, mean link degree 199, one node's link JSON ~4.5 kB) a profiled add now spends **54% of its
+time in JSON encode/decode** and 7% in commits, because rewriting a linked neighbour rewrites that
+neighbour's whole link dict — n rows × ~n links of JSON per add. (cProfile inflates absolute times;
+read the shares, take absolutes from the ladder.) So the next fix is a **data-shape** change — an
+edge table with one row per link, or writing only the links that actually changed — not a better
+neighbour search, and not the ledger.
+
+The honest conclusion is therefore not "the ledger is slow" (a fixed ~2.8 ms) and no longer "the
+store is blocked by transactions" (fixed): **the store still cannot go in front of a live agent at
+2.5k nodes, because the write volume per add is O(n × link degree).** Batching removed the storm.
+`bench/add_cost_profile.py` is the tool that says so, and is checked in so the next person measures
+rather than guesses.
 
 Verification is linear in entries and costs milliseconds at the sizes a single agent's store
 reaches. The live production mesh (~2.5k nodes) has not been measured end-to-end; the slope

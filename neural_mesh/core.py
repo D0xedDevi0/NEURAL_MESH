@@ -234,24 +234,40 @@ class Mesh:
         self._node_cache = out
         return dict(out)   # never hand out the live dict: _save inserts into it
 
+    def _row_params(self, node: MemoryNode) -> tuple:
+        return _node_row(node)
+
     def _save(self, node: MemoryNode, op: str = "", source: str = "",
               force: bool = False, actor: str = ""):
-        import json
-        row = node.to_row()
-        self.db.execute(
-            "REPLACE INTO nodes VALUES (?,?,?,?,?,?)",
-            (row[0], row[1], row[2], json.dumps(list(row[3])),
-             json.dumps(row[4]), json.dumps(row[5])),
-        )
+        self.db.execute("REPLACE INTO nodes VALUES (?,?,?,?,?,?)",
+                        _node_row(node))
         self.db.commit()
-        if getattr(self, "_node_cache", None) is not None:
-            self._node_cache[node.id] = node
-        # Witness the write if it changed what the memory *claims about itself*.
-        # Working-state saves (links, resonance, trust, lane, access counts) are
-        # deliberately not claims, so they do not grow the log.
-        ledger = getattr(self, "ledger", None)
-        if ledger is not None:
-            ledger.note(node, op=op, source=source, force=force, actor=actor)
+        _after_save(self, node, op=op, source=source, force=force, actor=actor)
+
+    def _save_many(self, nodes: "list[MemoryNode]", op: str = "",
+                   source: str = "", force: bool = False, actor: str = ""):
+        """Write several nodes in ONE transaction.
+
+        Auto-linking touches every neighbour, and each REPLACE+commit was a
+        separate fsync: measured at n=400 on an idle host, `sqlite3.commit`
+        was 80% of an add (410 commits per add, 2.5 ms each, 20.6 s of 25.8 s
+        for 20 adds). Batching changes only how many transactions the same
+        rows are written in — each node still gets its row rewritten and its
+        ledger witness computed from the same call. The fallback keeps the
+        duck-typed staging paths (which may expose no executemany) correct.
+        """
+        if not nodes:
+            return
+        if not hasattr(self.db, "executemany"):
+            for node in nodes:
+                self._save(node, op=op, source=source, force=force, actor=actor)
+            return
+        self.db.executemany("REPLACE INTO nodes VALUES (?,?,?,?,?,?)",
+                            [_node_row(n) for n in nodes])
+        self.db.commit()
+        for node in nodes:
+            _after_save(self, node, op=op, source=source, force=force,
+                        actor=actor)
 
     def _touch(self, node: MemoryNode, writeback: bool = True):
         """Update access stats. `writeback=False` skips the expensive SQLite
@@ -447,10 +463,17 @@ class Mesh:
         self._save(new_node)
 
     def _auto_link(self, node: MemoryNode):
-        """Self-organizing topology: link the new node to its nearest neighbours."""
-        import json
+        """Self-organizing topology: link the new node to its nearest neighbours.
+
+        The topology rule is unchanged — same `link_threshold`, same cosine, same
+        skip of superseded nodes — but the neighbour rewrites now go out as one
+        transaction instead of one per neighbour. That matters because a dense
+        store links the new node to most of its neighbours: at n=400 each add
+        rewrote 410 rows in 410 separate commits, which was 80% of the add.
+        """
         self._invalidate_cache()
         nodes = self._load()
+        touched = {}
         for other in nodes.values():
             if other.id == node.id or other.superseded_by:
                 continue
@@ -460,8 +483,9 @@ class Mesh:
                 w = round(sim, 3)
                 node.links[other.id] = w
                 other.links[node.id] = w
-                self._save(other)
-        self._save(node)
+                touched[other.id] = other
+        touched[node.id] = node
+        self._save_many(list(touched.values()))
 
     # ---------- consolidation bus (lane promotion/demotion) ----------
     def consolidate(self, hot_ttl: float = 86400.0, cold_threshold: int = 3):
@@ -997,6 +1021,36 @@ class Mesh:
         self.db.commit()
         result["deleted"] = bool(cur.rowcount)
         return result
+
+
+def _node_row(node: "MemoryNode") -> tuple:
+    """The SQLite row for a node. One definition, so the single-row and batched
+    write paths cannot drift apart.
+
+    Module-level on purpose: `sharing._StagedMesh` duck-types this class by
+    binding `Mesh._save` onto a raw sqlite3 handle, so anything `_save` calls
+    has to be reachable without Mesh instance machinery.
+    """
+    import json
+    row = node.to_row()
+    return (row[0], row[1], row[2], json.dumps(list(row[3])),
+            json.dumps(row[4]), json.dumps(row[5]))
+
+
+def _after_save(mesh, node: "MemoryNode", op: str = "", source: str = "",
+                force: bool = False, actor: str = ""):
+    """Post-write bookkeeping shared by the single-row and batched writers.
+
+    Also module-level, for the same duck-typing reason as `_node_row`.
+    """
+    if getattr(mesh, "_node_cache", None) is not None:
+        mesh._node_cache[node.id] = node
+    # Witness the write if it changed what the memory *claims about itself*.
+    # Working-state saves (links, resonance, trust, lane, access counts) are
+    # deliberately not claims, so they do not grow the log.
+    ledger = getattr(mesh, "ledger", None)
+    if ledger is not None:
+        ledger.note(node, op=op, source=source, force=force, actor=actor)
 
 
 def _sim(a, b) -> float:
