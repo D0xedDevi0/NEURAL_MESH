@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `D0xedDevi0/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-10-14 · Source package: **v0.39.0** · Production `/health`: **v0.39.0**, status `ok`, Rust resonance
+> Last updated: 2026-11-17 · Source package: **v0.41.0** · Production `/health`: **v0.41.0**, status `ok`, Rust resonance
 > The dated stages below are historical records. The **Current priorities** section is the active worklist.
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
@@ -24,18 +24,20 @@ memory contexts.
 
 ---
 
-## Baseline (current, 2026-10-14)
+## Baseline (current, 2026-11-17)
 
-🟦 **Shipped:** v0.39.0 in production at release tag `v0.39.0` (commit
-`e9c6b828`); both package and server report 0.39.0. L10
+🟦 **Shipped:** v0.41.0 in production at release tag `v0.41.0` (commit
+`d9c7dd93`); both package and server report 0.41.0. v0.40.0 — the tamper-evident
+provenance ledger — is tagged `v0.40.0` at `d2a4da6d` and is contained in the
+deployed tree. L10
 Meta, L12 Exchange, L13 Consensus and L14 Curriculum are implemented; the
 three-pillar `bench/versioned_truth_bench.py` currently passes 3/3 wins and 3/3
 controls. The benchmark is structural and synthetic, **not** a live service
 quality score.
 
-🟦 **Live prod:** `/health` returns status `ok`, version `0.39.0`, Rust resonance
-and 2,480 nodes at the deployment check. Treat that count as a snapshot, not a
-permanent health metric.
+🟦 **Live prod:** `/health` returns status `ok`, version `0.41.0`, Rust resonance,
+the provenance ledger enabled, and 3,592 nodes at the deployment check. Treat that
+count as a snapshot, not a permanent health metric.
 
 🟦 **LongMemEval:** complete, published 500-case flat-harness end-to-end
 comparison: hashed dense@10 **0.502** vs real bge-small dense@10 **0.422**.
@@ -83,6 +85,18 @@ needed or requested.
    rejection, unchanged node count, and VPS repository HEAD were independently
    checked after restart. See `docs/v039-release-verification.md`. This validates
    this release, not future deploys.
+5. **Release boundary — DONE (v0.40.0 + v0.41.0).** Two committed milestones had
+   never been tagged or deployed: the v0.40.0 provenance ledger and the v0.41.0
+   anchoring/attribution work. Both are now tagged and live. Full pytest passed
+   (460 passed, 14 skipped, 8 subtests), a clean no-deps install reported 0.41.0,
+   the 27-file release diff scanned clean for secrets, and the tag push passed the
+   SAST gate. Before the fast-forward an SQLite online backup passed
+   integrity/hash verification (3,592 nodes); after restart the public `/health`,
+   stats, manifest, feed and `/brain` responded, the unauthorized-write probe
+   returned 401, the node count was unchanged at 3,592, and the ledger schema was
+   confirmed present on the live database. See
+   `docs/v041-release-verification.md`. The ledger is live but **unanchored** —
+   anchoring the chain head outside the store is the next unstarted step.
 
 ## Historical baseline (2026-08-14; retained for provenance, not instructions)
 
