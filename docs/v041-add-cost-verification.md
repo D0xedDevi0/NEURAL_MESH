@@ -42,9 +42,20 @@ the number of transactions changes.
 
 | | before | after | |
 | --- | --- | --- | --- |
-| per add, n=400 | 1294 ms | **148 ms** | 8.7× |
+| per add, n=400 | 1294 ms | **148 ms** | 8.7× — see correction |
 | commits per add | 411 | **3** | 137× fewer |
 | share of the add in `commit` | 80% | **3.8%** | |
+
+> **Correction (2026-11-17, measured).** The 148 ms does **not** reproduce, and neither does the
+> 8.7×. Re-measured on an idle host (steal 0.3%, arms interleaved, 3 rounds): the same pre-delta
+> code at n=400 costs **316 ms CPU / 328 ms wall** per add (min 283 ms) — which agrees with this
+> doc's own ladder (290.5 ms at n=405) and with a fresh `add_cost_profile.py 400 20` of the same
+> revision (7.574 s / 20 adds, profiled). The commit-count claim is the one that holds: 411 → 3,
+> pinned by `tests/test_autolink_batching.py`, which fails against a frozen copy of the old writer.
+> Read the first row as **"411 commits → 3"**. The batching fix was still the right first move (the
+> commit count is the thing it changed and it is verified), but its ms-per-add saving was not
+> measured reliably here; interleaved medians for the pre-delta and post-delta writers are in
+> `docs/v041-links-delta-verification.md`.
 
 Steal-gated ladder — `.venv/bin/python bench/scale_add_probe.py`, worst point 1.2% steal, the first
 ladder the probe will publish (it refuses above 15%):
