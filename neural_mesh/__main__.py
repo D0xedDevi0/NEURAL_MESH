@@ -203,7 +203,7 @@ def cmd_ledger(args):
 def main():
     p = argparse.ArgumentParser(
         prog="neural-mesh",
-        description="Self-organizing agentic memory mesh — v0.41.0")
+        description="Self-organizing agentic memory mesh — v0.42.0")
     sp = p.add_subparsers(dest="cmd")
 
     # export

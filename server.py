@@ -33,7 +33,8 @@ AUTH_ENDPOINTS = {"add", "memory_cycle", "sleep_mesh", "consolidate_mesh",
                   "pointer_put", "pointer_summary", "dream", "export_mesh",
                   "merge", "stamp", "intuition_ingest_receipts", "eval_qa",
                   "yantrikdb_ingest", "yantrikdb_think", "helixa_attest_node",
-                  "peer_query", "mesh_audit", "federated_recall", "federated_dream", "federation_sync"}
+                  "peer_query", "mesh_audit", "federated_recall", "federated_dream",
+                  "federation_sync", "ledger_anchor_route"}
 POLICY_FIELDS = {"trust", "cap_trust", "allow_new", "allow_merge"}
 
 
@@ -73,9 +74,16 @@ def harden_response(resp):
 # Persist to a file so data survives restarts.
 # Set check_same_thread=False because Flask's dev server uses threads.
 DB_PATH = os.environ.get("NEURAL_MESH_DB", os.path.join(os.path.dirname(__file__), "mesh.db"))
+# `NEURAL_MESH_ANCHOR_FILE` pins ledger anchors in a file OUTSIDE the database.
+# In-store anchoring is convenience, not security: an attacker who owns the
+# database deletes the anchor row along with the entries it protects. Without a
+# sink, a clean truncation of the log is invisible to verify(); with one, the
+# surviving anchor line contradicts the cut.
+ANCHOR_FILE = os.environ.get("NEURAL_MESH_ANCHOR_FILE", "")
 mesh = Mesh(
     db_path=DB_PATH,
     resonance_backend=os.environ.get("NEURAL_MESH_RESONANCE_BACKEND", "auto"),
+    anchor_file=ANCHOR_FILE,
 )
 # Shared across Flask worker threads — attach it through the lock proxy so
 # concurrent requests can never step the same sqlite3 connection at once.
@@ -102,7 +110,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.41.0",
+        "version": "0.42.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
         # Provenance in the health line: how many events are witnessed, and
         # whether the head has been anchored outside this database.
@@ -381,7 +389,16 @@ def ledger_verify_route():
         data = request.get_json() or {}
         deep = bool(data.get("deep", True))
     rep = mesh.verify_memory(deep=deep)
-    return jsonify({"summary": rep.summary(), **rep.to_dict()}), (200 if rep.ok else 409)
+    # Say which anchors this verdict was judged against. A verdict is only as
+    # strong as the sink behind it: `sinks_in_store_only: true` means every
+    # anchor lives in the database the entries live in, so an attacker with
+    # write access can remove both and the cut looks clean.
+    sinks = []
+    if mesh.ledger is not None and getattr(mesh.ledger, "anchor_file", ""):
+        sinks.append(os.path.abspath(mesh.ledger.anchor_file))
+    return jsonify({"summary": rep.summary(), **rep.to_dict(),
+                    "sinks": sinks,
+                    "sinks_in_store_only": not sinks}), (200 if rep.ok else 409)
 
 
 @app.route("/mesh/ledger/head", methods=["GET"])
@@ -390,6 +407,28 @@ def ledger_head_route():
     return jsonify({"head": mesh.ledger_head(),
                     "anchor": (mesh.ledger.anchor_payload() if mesh.ledger
                                else {"anchorable": False})})
+
+
+@app.route("/mesh/ledger/anchor", methods=["POST"])
+def ledger_anchor_route():
+    """Pin the current head — the point past which the log cannot be quietly rewritten.
+
+    Body: {target?, detail?}. Auth-gated on purpose: it is the one ledger
+    operation with a side effect, and the side effect is what makes truncation
+    visible. The anchor is written to the configured sink
+    (`NEURAL_MESH_ANCHOR_FILE`) when one is set, so it survives an attacker who
+    owns the database; without a sink the response says so rather than implying
+    a guarantee it does not have.
+    """
+    if mesh.ledger is None:
+        return jsonify({"error": "ledger disabled on this instance"}), 503
+    data = request.get_json(silent=True) or {}
+    result = mesh.ledger.anchor(target=data.get("target", "local"),
+                                detail=data.get("detail") or None)
+    if not result.get("anchored"):
+        return jsonify(result), 409
+    result["verify"] = mesh.verify_memory(deep=False).summary()
+    return jsonify(result)
 
 
 @app.route("/mesh/ledger/provenance", methods=["GET", "POST"])
@@ -920,7 +959,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.41.0",
+        "version": "0.42.0",
         "provenance_breakdown": provenance_breakdown,
         "ledger": mesh.ledger_head(),
     })
@@ -989,7 +1028,7 @@ def erc8004_manifest():
             "proof-of-memory",
             "tamper-evident-provenance",
         ],
-        "version": "0.41.0",
+        "version": "0.42.0",
     })
 
 

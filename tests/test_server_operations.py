@@ -92,7 +92,7 @@ class TestOperationalEndpoints(unittest.TestCase):
         server.API_TOKEN = "test-secret"
         try:
             for path in ("/eval/qa", "/yantrikdb/ingest", "/yantrikdb/think",
-                         "/helixa/attest-node"):
+                         "/helixa/attest-node", "/mesh/ledger/anchor"):
                 with self.subTest(path=path):
                     response = self.client.post(path, json={})
                     self.assertEqual(response.status_code, 401)

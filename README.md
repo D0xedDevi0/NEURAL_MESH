@@ -1079,12 +1079,47 @@ memory lane.
 - [x] **Working-memory token-budget optimizer** — context as a budget problem: greedy value-density fit, non-destructive priority eviction (`select_fit`)
 - [x] **Provenance ledger** — append-only hash-chained witness at the storage boundary: `verify_memory()`, `provenance_of()`, Merkle root + Base (8453) anchor payload, peer bundles, logged erasure (`forget_memory`)
 - [ ] Live Helixa signing (on-chain attestation) — gated behind human GO + key-held signer
-- [ ] Ledger anchoring cron — anchor the head to Base on a schedule so unanchored tail-truncation stops being a blind spot
+- [x] Ledger anchoring cron — `scripts/anchor_cron.sh` re-anchors the head to the external sink on a schedule (Base broadcast stays GO-gated); production is anchored as of v0.42.0
 - [ ] `verify` in the dashboard — show provenance (not just content) for every memory the UI quotes
 
 ---
 
 ## 📜 Release notes
+
+### 🟦 v0.42.0 — Anchoring becomes operable, and the cron the roadmap asked for (2026-11-18)
+
+v0.41.0 built the sink (`anchor_file` / `--anchors PATH`) and then left it switched off:
+production reported `anchored: false` on every check, because a capability nobody can reach
+is not a guarantee. This release makes anchoring part of the running service.
+
+**The service now owns a sink.** `server.py` reads `NEURAL_MESH_ANCHOR_FILE` and passes it to
+`Mesh(anchor_file=...)`, so the ledger judge the API serves is the same one the operator
+configured. Set it in the systemd unit next to `NEURAL_MESH_DB`; unset, everything still works
+exactly as before, and the responses say the guarantee is weaker instead of implying it is not.
+
+**`POST /mesh/ledger/anchor` (auth-gated).** One call pins the current head and returns the
+record — `seq`, `entry_hash`, `merkle_root`, `sink`, `covers_entries`. It is the only ledger
+operation that writes, so it is the only one behind the token: `verify`, `head`, `provenance`
+and `bundle` stay public, because verifying someone else's memory is exactly what a suspicious
+third party should be able to do without credentials. Anchoring an empty ledger answers `409`,
+not a fake anchor.
+
+**`verify` now reports the sink it was judged against.** A green verdict is only as strong as
+the anchor behind it, so the response carries `sinks` and `sinks_in_store_only`. An anchor that
+lives in the database the entries live in is deleted along with them, and
+`sinks_in_store_only: true` says so in the payload rather than leaving the reader to assume
+otherwise.
+
+**The roadmap item is now a script, not a wish.** `scripts/anchor_cron.sh` re-anchors the head
+on a schedule — the part of anchoring that can be automated without a key or gas — and
+`curl`s the public verify endpoint afterwards so a failure is loud. Publishing the anchor to
+Base stays what it always was: `GET /mesh/ledger/head` already returns the calldata, and
+broadcasting it remains a separate, human-approved step.
+
+**Measured, not asserted.** `7` new tests in `tests/test_server_ledger_anchor.py`, including
+the attack the sink exists for: cut the log to 4 of 6 entries *and* delete `ledger_anchor` —
+the in-database anchor reports nothing, the sink reports `kind: anchor`, `"log ends at #4 but
+head #6 was anchored"`. Full suite: `467 passed, 14 skipped`.
 
 ### 🟦 v0.41.0 — Anchoring outside the store, and a report that names the field (2026-11-15)
 
