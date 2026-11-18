@@ -1079,12 +1079,59 @@ memory lane.
 - [x] **Working-memory token-budget optimizer** — context as a budget problem: greedy value-density fit, non-destructive priority eviction (`select_fit`)
 - [x] **Provenance ledger** — append-only hash-chained witness at the storage boundary: `verify_memory()`, `provenance_of()`, Merkle root + Base (8453) anchor payload, peer bundles, logged erasure (`forget_memory`)
 - [ ] Live Helixa signing (on-chain attestation) — gated behind human GO + key-held signer
-- [x] Ledger anchoring cron — `scripts/anchor_cron.sh` re-anchors the head to the external sink on a schedule (Base broadcast stays GO-gated); production is anchored as of v0.42.0
+- [x] Ledger anchoring cron — `scripts/anchor_cron.sh` re-anchors the head to the external sink on a schedule; production is anchored as of v0.42.0
+- [x] Base anchor sender + third-party checker — `scripts/anchor_base.py` (dry by default, `send` needs `--approve`, `check-tx` needs no key) on top of `anchor_payload()` / `verify_anchor_memo()`
+- [ ] **First on-chain anchor broadcast** — the only step left, and it stays a human-approved write: the sender is dry-run verified and priced, but no Base transaction exists yet
 - [ ] `verify` in the dashboard — show provenance (not just content) for every memory the UI quotes
 
 ---
 
 ## 📜 Release notes
+
+### 🟦 v0.46.0 — The on-chain anchor gets a sender and a stranger's checker (2026-11-18)
+
+`anchor_payload()` has produced Base (8453) calldata since the ledger shipped, and
+`verify_anchor_memo()` has been able to judge an announced anchor since the same commit. Neither
+had ever been pointed at a real transaction, because the half that matters — putting the memo in a
+transaction, and reading it back out of one — was left to the operator.
+
+`scripts/anchor_base.py` closes both ends.
+
+**`dry` (default).** Fetches the live head, decodes the calldata back into a memo, and asserts the
+decoded memo equals the one the service printed — if those two drift, what we would sign is not
+what it told us it built. Then it checks the memo's internal consistency (`check_memo`): every
+required field present, `seq`/`entries` positive integers, all three hashes 32-byte lowercase hex,
+and `entries >= seq`. Then it chains whatever slice of the ledger the bundle endpoint returns: each
+entry's `prev_hash` must be the previous entry's `entry_hash`. Finally it prices the transaction
+with a real `eth_estimateGas`. No key is read and nothing is signed.
+
+**`send --approve`.** Signs and broadcasts the one transaction whose calldata is the memo, records
+the hash to `anchors-onchain.jsonl` *immediately* — before waiting for a receipt, because a lost
+hash is a lost claim and a re-send costs gas — then polls until the receipt reports success.
+`--send` without `--approve` refuses and prints why.
+
+**`check-tx 0x…`.** The direction that doesn't need us: read a Base transaction, decode the memo out
+of its `input`, and compare it against a ledger — a local database with `--ledger-db`, otherwise the
+public API *as a claim*. This is what makes the anchor worth publishing: a third party can take a
+transaction hash, a ledger, and nothing else of ours, and reach the same verdict.
+
+**Two honest limits, stated rather than hidden.**
+
+- The merkle root is only recomputed when the fetched slice **is** the whole ledger. A root over 500
+  of 3,686 entries is a different number, and printing `matches: False` there would read as a failed
+  check. Windowed reads report the chain-linkage result and say the root was not recomputed.
+- **Nothing has been broadcast yet.** The sender is dry-run verified, priced (~0.0000002 ETH for
+  33,356 gas at 0.006 gwei), and its decode/verify round trip is covered by tests — but no
+  transaction exists on Base, so the ledger's strongest available anchor is still the external file
+  sink. Anchoring on-chain stays a human-approved write.
+
+**Measured, not asserted.** 20 new tests in `tests/test_anchor_base.py`, including the full verdict
+matrix: an identical head is a prefix, a ledger that has grown past the anchor is still a prefix, a
+ledger *shorter* than the anchor is truncation (the case this whole lane exists for), same `seq` with
+a different hash is a rewrite, and an anchor from another ledger is refused by `chain_id`. The
+decoder is pinned against five kinds of non-memo input — a plain transfer, empty input, junk hex,
+valid hex that isn't JSON, and JSON that isn't an anchor — none of which may raise.
+Full suite: `496 passed, 14 skipped`.
 
 ### 🟦 v0.45.0 — The sink is part of the verdict, not of the caller (2026-11-18)
 

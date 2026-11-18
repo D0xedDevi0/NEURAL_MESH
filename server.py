@@ -110,7 +110,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.45.0",
+        "version": "0.46.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
         # Provenance in the health line: how many events are witnessed, and
         # whether the head has been anchored outside this database.
@@ -976,7 +976,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.45.0",
+        "version": "0.46.0",
         "provenance_breakdown": provenance_breakdown,
         "ledger": mesh.ledger_head(),
     })
@@ -1045,7 +1045,7 @@ def erc8004_manifest():
             "proof-of-memory",
             "tamper-evident-provenance",
         ],
-        "version": "0.45.0",
+        "version": "0.46.0",
     })
 
 
