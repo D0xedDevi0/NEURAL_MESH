@@ -111,5 +111,76 @@ class TestLedgerAnchorRoute(unittest.TestCase):
         self.assertEqual(body["sinks"], [os.path.abspath(self.sink)])
 
 
+class TestLedgerAdoptRoute(unittest.TestCase):
+    """A coverage failure is the one verdict with a documented remedy. These
+    tests hold the remedy to the same standard as the verdict: reachable over
+    HTTP, auth-gated because it writes, and honest about what adoption means."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.db = os.path.join(self.tmp.name, "mesh.db")
+        # Memories written before the ledger existed: open without it, write,
+        # close, then reopen the same store with the ledger on.
+        pre = Mesh(self.db, validator=False, ledger=False)
+        for i in range(5):
+            pre.add(f"memory from before the ledger {i}", agent_id="alice")
+        pre.db.close()
+
+        self.sink = os.path.join(self.tmp.name, "out", "anchors.jsonl")
+        os.makedirs(os.path.dirname(self.sink), exist_ok=True)
+        server.mesh = Mesh(self.db, validator=False, anchor_file=self.sink)
+        server.app.config["TESTING"] = True
+        self.client = server.app.test_client()
+
+    def tearDown(self):
+        server.mesh.db.close()
+        self.tmp.cleanup()
+
+    def test_unwitnessed_memories_fail_verify_with_a_named_remedy(self):
+        response = self.client.get("/mesh/ledger/verify")
+        self.assertEqual(response.status_code, 409)
+        body = response.get_json()
+        self.assertEqual(body["kind"], "coverage")
+        self.assertEqual(body["nodes"], 5)
+        self.assertIn("bootstrap()", body["advice"])
+
+    def test_adopt_closes_the_coverage_gap_and_verify_goes_green(self):
+        response = self.client.post("/mesh/ledger/adopt", json={})
+        self.assertEqual(response.status_code, 200)
+        body = response.get_json()
+        self.assertEqual(body["adopted"], 5)
+        # Adoption attests; it does not anchor. Pinning stays a separate,
+        # deliberate call, so nothing here writes the sink.
+        self.assertFalse(os.path.exists(self.sink))
+
+        after = self.client.get("/mesh/ledger/verify").get_json()
+        self.assertTrue(after["ok"])
+        self.assertEqual(after["adopted"], 5)
+        self.assertEqual(after["unexplained"], [])
+
+    def test_adoption_is_labelled_and_never_counted_as_witnessed(self):
+        self.client.post("/mesh/ledger/adopt", json={})
+        entries = server.mesh.ledger.entries(limit=50)
+        adopt = [e for e in entries if e.op == "adopt"]
+        self.assertEqual(len(adopt), 5)
+        # The report keeps `adopted` distinct from chain-witnessed evidence, and
+        # the adopt entry itself says so in the log rather than only in a field.
+        summary = self.client.get("/mesh/ledger/verify").get_json()["summary"]
+        self.assertIn("adopted", summary.lower())
+
+    def test_adopt_is_idempotent(self):
+        self.client.post("/mesh/ledger/adopt", json={})
+        again = self.client.post("/mesh/ledger/adopt", json={}).get_json()
+        self.assertEqual(again["adopted"], 0)
+
+    def test_adopt_is_auth_gated_when_a_token_is_configured(self):
+        old = server.API_TOKEN
+        server.API_TOKEN = "test-secret"
+        try:
+            self.assertEqual(self.client.post("/mesh/ledger/adopt", json={}).status_code, 401)
+        finally:
+            server.API_TOKEN = old
+
+
 if __name__ == "__main__":
     unittest.main()

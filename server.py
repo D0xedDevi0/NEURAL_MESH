@@ -34,7 +34,7 @@ AUTH_ENDPOINTS = {"add", "memory_cycle", "sleep_mesh", "consolidate_mesh",
                   "merge", "stamp", "intuition_ingest_receipts", "eval_qa",
                   "yantrikdb_ingest", "yantrikdb_think", "helixa_attest_node",
                   "peer_query", "mesh_audit", "federated_recall", "federated_dream",
-                  "federation_sync", "ledger_anchor_route"}
+                  "federation_sync", "ledger_anchor_route", "ledger_adopt_route"}
 POLICY_FIELDS = {"trust", "cap_trust", "allow_new", "allow_merge"}
 
 
@@ -110,7 +110,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.42.0",
+        "version": "0.43.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
         # Provenance in the health line: how many events are witnessed, and
         # whether the head has been anchored outside this database.
@@ -427,7 +427,28 @@ def ledger_anchor_route():
                                 detail=data.get("detail") or None)
     if not result.get("anchored"):
         return jsonify(result), 409
-    result["verify"] = mesh.verify_memory(deep=False).summary()
+    # deep=True on purpose: the shallow path skips coverage, so it would report
+    # "over 0 live memories" and make an uncovered store look witnessed.
+    result["verify"] = mesh.verify_memory(deep=True).summary()
+    return jsonify(result)
+
+
+@app.route("/mesh/ledger/adopt", methods=["POST"])
+def ledger_adopt_route():
+    """Adopt memories that predate the ledger — the remedy `verify` names.
+
+    A coverage failure tells the reader to "run bootstrap()". That advice is
+    useless to anyone who only has HTTP, and it is a write, so it sits behind
+    the token like the anchor. Adoption attests the store **as of now**: it does
+    not claim those memories were never tampered with, and the verify report
+    keeps `adopted` separate from chain-witnessed entries so the two cannot be
+    read as the same thing.
+    """
+    if mesh.ledger is None:
+        return jsonify({"error": "ledger disabled on this instance"}), 503
+    data = request.get_json(silent=True) or {}
+    result = mesh.adopt_ledger(agent_id=str(data.get("agent_id") or "self"))
+    result["verify"] = mesh.verify_memory(deep=True).summary()
     return jsonify(result)
 
 
@@ -959,7 +980,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.42.0",
+        "version": "0.43.0",
         "provenance_breakdown": provenance_breakdown,
         "ledger": mesh.ledger_head(),
     })
@@ -1028,7 +1049,7 @@ def erc8004_manifest():
             "proof-of-memory",
             "tamper-evident-provenance",
         ],
-        "version": "0.42.0",
+        "version": "0.43.0",
     })
 
 

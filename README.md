@@ -1086,6 +1086,38 @@ memory lane.
 
 ## 📜 Release notes
 
+### 🟦 v0.43.0 — The remedy `verify` names is reachable over HTTP (2026-11-18)
+
+v0.42.0 shipped anchoring. Deploying it exposed the next thing: the first
+`verify` against the live service returned `ok: false, kind: coverage` —
+**2,179 live memories have no ledger entry**, because the ledger only began
+witnessing at v0.40.0 and everything older predates it. The report was right, and
+its advice was `run bootstrap()` — a Python call. Pointing a public API's failure
+message at a function nobody outside the repo can invoke is not a remedy, it is a
+shrug.
+
+**`POST /mesh/ledger/adopt` (auth-gated).** Same operation, reachable. It is a
+write, so it sits behind the token next to the anchor; `verify`, `head`,
+`provenance` and `bundle` stay public, because the reader this matters to is
+whoever does not trust the operator. The response carries the adopted count, how
+many remain, and the post-adoption verify summary.
+
+**Adoption is labelled, not laundered.** An `adopt` entry says what it is —
+attesting the store *as of now*, not proving it was never tampered with before —
+and the report counts `adopted` separately from chain-witnessed entries so the
+two can never be read as one number. Adoption also does not anchor: pinning the
+head stays a separate, deliberate call.
+
+**The anchor's inline verdict no longer contradicts `verify`.** The anchor
+response used `deep=False`, which skips the coverage comparison and reported
+`ledger OK — 1505 entries verified over 0 live memories`. "0 live memories" on a
+3,640-memory store reads like a clean bill of health. It now uses the same deep
+path the public endpoint does, so the two cannot disagree.
+
+**Measured, not asserted.** 5 new tests covering the unwitnessed→`409 coverage`
+→ adopt → green cycle, adoption's idempotence, the auth gate, and that adoption
+writes no anchor. Full suite: `472 passed, 14 skipped`.
+
 ### 🟦 v0.42.0 — Anchoring becomes operable, and the cron the roadmap asked for (2026-11-18)
 
 v0.41.0 built the sink (`anchor_file` / `--anchors PATH`) and then left it switched off:
