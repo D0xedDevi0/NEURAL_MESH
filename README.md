@@ -1086,6 +1086,28 @@ memory lane.
 
 ## 📜 Release notes
 
+### 🟦 v0.45.0 — The sink is part of the verdict, not of the caller (2026-11-18)
+
+v0.42.0 reported the sink in the HTTP response by re-deriving it in the route — reading
+`mesh.ledger.anchor_file` and building the list itself. That made the field a property of one
+surface rather than of the verdict, so the second surface (the plugin's `mesh_verify` tool)
+could not see it at all, and any third caller would have had to re-derive it too. Two places
+computing the same fact is how they end up disagreeing.
+
+`VerifyReport` now carries `sinks` — the anchor files actually consulted — populated in
+`verify()` **before any early return**, so a chain failure or a coverage failure says what it was
+judged against rather than only the failures that get as far as the anchor comparison.
+`sinks_in_store_only` is derived (anchored, and no sink behind it) rather than stored, for the
+same reason: it cannot drift from the field it is derived from.
+
+The HTTP route now passes both through instead of computing them, and the answer is identical
+to the one the plugin gives, because it is the same object.
+
+**Measured, not asserted.** 2 new tests, both on the early-return paths where this information
+was previously lost: a rewritten ledger row yields `kind: chain` and still names the sink, and
+the same failure judged from an in-store anchor reports `sinks: []` with
+`sinks_in_store_only: true`. Full suite: `476 passed, 14 skipped`.
+
 ### 🟦 v0.44.0 — Each sink line is a distinct claim, not a heartbeat (2026-11-18)
 
 The anchoring cron re-anchors every six hours. The head only moves when something is

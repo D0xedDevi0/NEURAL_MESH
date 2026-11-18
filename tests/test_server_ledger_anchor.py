@@ -144,6 +144,45 @@ class TestLedgerAnchorRoute(unittest.TestCase):
         self.assertTrue(body["ok"])
         self.assertEqual(body["anchor_seq"], seqs[-1])
 
+
+    def test_a_verdict_that_fails_before_the_anchor_check_still_names_its_sink(self):
+        """Early returns are where this information goes missing. A broken chain
+        returns before the anchor comparison ever runs, and the reader still needs
+        to know which sink the verdict had available to judge against."""
+        server.mesh.add_many([f"memory {i}" for i in range(4)], agent_id="alice")
+        self.client.post("/mesh/ledger/anchor", json={})
+        server.mesh.db.close()
+
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE ledger SET op='rewritten' WHERE seq=2")
+        conn.commit()
+        conn.close()
+
+        server.mesh = Mesh(self.db, validator=False, anchor_file=self.sink)
+        body = self.client.get("/mesh/ledger/verify").get_json()
+        self.assertEqual(body["kind"], "chain")
+        self.assertEqual(body["sinks"], [os.path.abspath(self.sink)])
+        self.assertFalse(body["sinks_in_store_only"])
+
+    def test_an_in_store_only_failure_says_so_instead_of_implying_a_sink(self):
+        server.mesh = Mesh(os.path.join(self.tmp.name, "instore2.db"), validator=False)
+        server.mesh.add_many([f"memory {i}" for i in range(4)], agent_id="alice")
+        self.client.post("/mesh/ledger/anchor", json={})
+        server.mesh.db.close()
+
+        conn = sqlite3.connect(server.mesh.db_path if hasattr(server.mesh, "db_path")
+                               else os.path.join(self.tmp.name, "instore2.db"))
+        conn.execute("UPDATE ledger SET op='rewritten' WHERE seq=2")
+        conn.commit()
+        conn.close()
+
+        server.mesh = Mesh(os.path.join(self.tmp.name, "instore2.db"), validator=False)
+        body = self.client.get("/mesh/ledger/verify").get_json()
+        self.assertEqual(body["kind"], "chain")
+        self.assertEqual(body["sinks"], [])
+        self.assertTrue(body["sinks_in_store_only"])
+
+
 class TestLedgerAdoptRoute(unittest.TestCase):
     """A coverage failure is the one verdict with a documented remedy. These
     tests hold the remedy to the same standard as the verdict: reachable over

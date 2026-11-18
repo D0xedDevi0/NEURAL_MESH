@@ -110,7 +110,7 @@ def health():
     return jsonify({
         "status": "ok",
         "nodes": count,
-        "version": "0.44.0",
+        "version": "0.45.0",
         "resonance_backend": mesh.stats()["resonance_backend"],
         # Provenance in the health line: how many events are witnessed, and
         # whether the head has been anchored outside this database.
@@ -393,12 +393,8 @@ def ledger_verify_route():
     # strong as the sink behind it: `sinks_in_store_only: true` means every
     # anchor lives in the database the entries live in, so an attacker with
     # write access can remove both and the cut looks clean.
-    sinks = []
-    if mesh.ledger is not None and getattr(mesh.ledger, "anchor_file", ""):
-        sinks.append(os.path.abspath(mesh.ledger.anchor_file))
     return jsonify({"summary": rep.summary(), **rep.to_dict(),
-                    "sinks": sinks,
-                    "sinks_in_store_only": not sinks}), (200 if rep.ok else 409)
+                    "sinks_in_store_only": rep.sinks_in_store_only}), (200 if rep.ok else 409)
 
 
 @app.route("/mesh/ledger/head", methods=["GET"])
@@ -980,7 +976,7 @@ def mesh_stats():
         "active_nodes": active,
         "consolidated": total - active,
         "quarantined": quarantined,
-        "version": "0.44.0",
+        "version": "0.45.0",
         "provenance_breakdown": provenance_breakdown,
         "ledger": mesh.ledger_head(),
     })
@@ -1049,7 +1045,7 @@ def erc8004_manifest():
             "proof-of-memory",
             "tamper-evident-provenance",
         ],
-        "version": "0.44.0",
+        "version": "0.45.0",
     })
 
 
