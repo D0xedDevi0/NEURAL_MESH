@@ -111,6 +111,39 @@ class TestLedgerAnchorRoute(unittest.TestCase):
         self.assertEqual(body["sinks"], [os.path.abspath(self.sink)])
 
 
+    def test_re_anchoring_an_unchanged_head_does_not_grow_the_sink(self):
+        """Each sink line should be a distinct prefix, not a heartbeat. A cron
+        that re-anchors every few hours must not turn the anchor history into
+        four copies of the same claim."""
+        server.mesh.add("a fact", agent_id="alice")
+        first = self.client.post("/mesh/ledger/anchor", json={}).get_json()
+        self.assertFalse(first["reused"])
+        lines = open(self.sink).read().strip().splitlines()
+        self.assertEqual(len(lines), 1)
+
+        again = self.client.post("/mesh/ledger/anchor", json={}).get_json()
+        self.assertTrue(again["anchored"])
+        self.assertTrue(again["reused"])
+        self.assertEqual(again["seq"], first["seq"])
+        self.assertEqual(len(open(self.sink).read().strip().splitlines()), 1,
+                         "an unchanged head must not append a second identical line")
+
+    def test_anchoring_appends_as_soon_as_the_head_moves(self):
+        server.mesh.add("a fact", agent_id="alice")
+        self.client.post("/mesh/ledger/anchor", json={})
+        server.mesh.add("a later fact", agent_id="alice")
+        moved = self.client.post("/mesh/ledger/anchor", json={}).get_json()
+        self.assertFalse(moved["reused"])
+        lines = open(self.sink).read().strip().splitlines()
+        self.assertEqual(len(lines), 2)
+        seqs = [json.loads(l)["seq"] for l in lines]
+        self.assertEqual(seqs, sorted(seqs))
+        self.assertLess(seqs[0], seqs[1])
+        # Both anchors still count: the earlier one still protects its prefix.
+        body = self.client.get("/mesh/ledger/verify").get_json()
+        self.assertTrue(body["ok"])
+        self.assertEqual(body["anchor_seq"], seqs[-1])
+
 class TestLedgerAdoptRoute(unittest.TestCase):
     """A coverage failure is the one verdict with a documented remedy. These
     tests hold the remedy to the same standard as the verdict: reachable over

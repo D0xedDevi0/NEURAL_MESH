@@ -816,14 +816,26 @@ class ProvenanceLedger:
                   "chain_id": self.chain_id(), "seq": tail.seq,
                   "entry_hash": tail.entry_hash, "merkle_root": root,
                   "entries": len(hashes), "ts": ts, "target": target, "detail": detail or {}}
-        sink = ""
+        sink, reused = "", False
         if self.anchor_file:
-            append_anchor(self.anchor_file, record)
             sink = os.path.abspath(self.anchor_file)
+            # Re-anchoring an unchanged head adds nothing: the earlier line
+            # already says this prefix existed. Skipping keeps each sink line a
+            # distinct prefix, so the file stays a history rather than a
+            # heartbeat, and a caller who is told the head is anchored is not
+            # paying for a new line to say so.
+            prior = read_anchors(self.anchor_file)
+            last = prior[-1] if prior else None
+            if (last and last.get("seq") == tail.seq
+                    and last.get("entry_hash") == tail.entry_hash
+                    and (last.get("merkle_root") or "") == root):
+                reused = True
+            else:
+                append_anchor(self.anchor_file, record)
         return {"anchored": True, "seq": tail.seq, "entry_hash": tail.entry_hash,
                 "merkle_root": root, "target": target, "ts": ts,
                 "covers_entries": len(hashes), "chain_id": self.chain_id(),
-                "sink": sink,
+                "sink": sink, "reused": reused,
                 "note": ("the anchored prefix cannot be rewritten or truncated below it "
                          "without verification failing"
                          + ("" if sink else " — but this anchor lives in the database "

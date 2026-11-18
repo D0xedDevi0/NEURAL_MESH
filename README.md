@@ -1086,6 +1086,27 @@ memory lane.
 
 ## 📜 Release notes
 
+### 🟦 v0.44.0 — Each sink line is a distinct claim, not a heartbeat (2026-11-18)
+
+The anchoring cron re-anchors every six hours. The head only moves when something is
+actually written, so most of those runs re-pin the same prefix — and each one appended a
+byte-identical line to the sink. Four lines in the first hour, all making the same claim about
+#3684. A sink that grows with duplicates stops being a history of the ledger and becomes a
+transcript of the cron.
+
+An anchor is now written to the sink only when it says something new: `anchor()` compares
+against the most recent sink record and returns `reused: true` without appending when `seq`,
+`entry_hash` and `merkle_root` already match. The in-database record is still refreshed, so
+`anchored` stays true; `verify` still judges against every distinct anchor, including the older
+ones that protect shorter prefixes.
+
+The response says which happened, so a caller can tell "the head moved and I pinned it" from
+"the head was already pinned" instead of inferring it from a file that grew regardless.
+
+**Measured, not asserted.** 2 new tests: re-anchoring an unchanged head leaves the sink at one
+line and reports `reused`, and a real move appends exactly one line with a strictly higher seq
+while `verify` still passes against both. Full suite: `474 passed, 14 skipped`.
+
 ### 🟦 v0.43.0 — The remedy `verify` names is reachable over HTTP (2026-11-18)
 
 v0.42.0 shipped anchoring. Deploying it exposed the next thing: the first
