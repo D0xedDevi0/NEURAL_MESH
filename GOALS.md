@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `D0xedDevi0/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-11-17 · Source package: **v0.41.0** · Production `/health`: **v0.41.0**, status `ok`, Rust resonance
+> Last updated: 2026-11-20 · Source package: **v0.46.0** · Production `/health`: **v0.45.0**, status `ok` (v0.46.0 adds client-side anchoring tooling plus a version-string bump only — prod server behavior is unchanged)
 > The dated stages below are historical records. The **Current priorities** section is the active worklist.
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
@@ -95,8 +95,35 @@ needed or requested.
    stats, manifest, feed and `/brain` responded, the unauthorized-write probe
    returned 401, the node count was unchanged at 3,592, and the ledger schema was
    confirmed present on the live database. See
-   `docs/v041-release-verification.md`. The ledger is live but **unanchored** —
-   anchoring the chain head outside the store is the next unstarted step.
+   `docs/v041-release-verification.md`.
+
+6. **On-chain anchoring — DONE (two checkpoints, live on Base).** The provenance
+   ledger is now anchored outside the store, on Base (chain 8453), and the
+   anchors re-verify themselves against a growing ledger.
+
+   - **Anchor #1** — 3,943 events, tx
+     `0x2ce4e7d5dad73d9eb3079f8496366966d051250ef9bfa2d96702d726ae830e66`,
+     block 59,969,620.
+   - **Anchor #2** — 3,967 events, tx
+     `0x266381a41ffef1060e4dd12f49e441fc8eee4998d31ed2a12888a06fcda3d3c2`,
+     block 60,024,891.
+
+   Tooling in `scripts/anchor_base.py`:
+   - `--check-tx <hash>` re-derives the *exact anchored prefix* from any later,
+     larger export and compares its head + Merkle root to the on-chain memo — a
+     changed or deleted event inside the window fails by name, an incomplete
+     export says "not enough evidence", and events past the anchor pass
+     automatically. Works read-only against the public API or a local SQLite db
+     (`mode=ro`; never constructs a `ProvenanceLedger`, whose constructor writes
+     schema).
+   - `--send --approve` recomputes the memo's root + head from the full ledger
+     *before* signing — it refuses to broadcast a root the service merely
+     asserted.
+
+   `scripts/verify_bundle.py` is a Python-3.10-stdlib offline verifier (no
+   server, db, wallet, or network); a `demos/offline-proof/` kit demonstrates a
+   valid vs. a tampered record. The two anchors agree exactly on their shared
+   3,943-event prefix: same head hash, same Merkle root.
 
 ## Historical baseline (2026-08-14; retained for provenance, not instructions)
 
