@@ -41,7 +41,7 @@ import urllib.request
 REPO = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO))
 
-from neural_mesh.ledger import ProvenanceLedger, merkle_root  # noqa: E402
+from neural_mesh.ledger import ProvenanceLedger, SCHEME, merkle_root  # noqa: E402
 
 RPC_URL = os.environ.get("BASE_RPC_URL", "https://mainnet.base.org")
 DEFAULT_SINK = "/var/lib/neural-mesh/anchors-onchain.jsonl"
@@ -268,6 +268,47 @@ def mode_send(base_url: str, key_path: str, sink: str, ledger_db: str | None) ->
     return 1
 
 
+def verify_prefix(memo: dict, entries: list, chain_id: str = "") -> dict:
+    """Recompute the anchored prefix of a ledger against an on-chain memo.
+
+    ``entries`` is a list of event dicts (``LedgerEntry.to_dict()`` or bundle
+    rows) in any order. The prefix is the first ``memo["seq"]`` events by
+    sequence number. Unlike ``verify_anchor_memo`` (which only sees the current
+    head), this re-derives the events themselves, so it catches a rewrite of any
+    entry inside the anchored window even when the ledger has since grown.
+
+    Returns ``ok=False`` with a reason that distinguishes:
+      - "not enough evidence" — the export is shorter than the anchored sequence
+      - an edited entry whose hash no longer recomputes
+      - a rewritten history whose head or Merkle root no longer matches the memo
+      - an anchor belonging to a different ledger
+    """
+    n = int(memo["seq"])
+    if chain_id and memo.get("ledger") and chain_id != memo["ledger"]:
+        return {"ok": False, "reason": "anchor belongs to a different ledger (chain_id mismatch)"}
+    rows = sorted(entries, key=lambda e: e["seq"])
+    if len(rows) < n:
+        return {"ok": False,
+                "reason": f"not enough evidence: export has {len(rows)} entries, anchored sequence is {n}"}
+    prefix = rows[:n]
+    # Reuse the shipped, tested per-entry re-derivation (hashes + links).
+    inner = ProvenanceLedger.verify_bundle({
+        "scheme": SCHEME, "kind": "ledger-bundle", "chain_id": chain_id or memo.get("ledger", ""),
+        "head": {"seq": n, "entry_hash": prefix[-1]["entry_hash"], "ts": prefix[-1].get("ts", 0.0)},
+        "entries": prefix, "merkle_root": merkle_root([e["entry_hash"] for e in prefix]),
+    }, expect_chain_id=memo.get("ledger", ""))
+    if not inner["ok"]:
+        return {"ok": False, "broken_at": inner.get("broken_at"), "reason": inner["reason"]}
+    if prefix[-1]["entry_hash"] != memo["head"]:
+        return {"ok": False, "broken_at": n,
+                "reason": "head at the anchored sequence differs from the on-chain memo — history rewritten"}
+    if merkle_root([e["entry_hash"] for e in prefix]) != memo["merkle_root"]:
+        return {"ok": False, "broken_at": n,
+                "reason": "Merkle root of the anchored prefix differs from the on-chain memo"}
+    return {"ok": True, "checked": n, "head_hash": prefix[-1]["entry_hash"],
+            "entries_total": len(rows), "reason": "anchored prefix recomputed and intact"}
+
+
 def mode_check(tx_hash: str, ledger_db: str | None, base_url: str) -> int:
     """The no-trust direction: read Base, decode the memo, compare to the ledger."""
     if not tx_hash.startswith("0x"):
@@ -292,30 +333,38 @@ def mode_check(tx_hash: str, ledger_db: str | None, base_url: str) -> int:
         print(f"memo is MALFORMED: {'; '.join(wrong)}")
         return 1
 
-    # compare against whichever head we can reach: a local database if given,
-    # otherwise the public API. The comparison logic is the same either way.
+    # Recompute the anchored prefix from the actual events — a local database if
+    # given, otherwise the public API. The same check runs either way.
     if ledger_db:
         import sqlite3
-        import threading
+        # Read-only: build the event dicts directly rather than construct a full
+        # ProvenanceLedger, whose constructor writes the schema (which a `mode=ro`
+        # connection rightly refuses). The check must never require write access.
         conn = sqlite3.connect(f"file:{ledger_db}?mode=ro", uri=True)
-        led = ProvenanceLedger(lambda: conn, lock=threading.Lock())
-        head = led.head() or {}
-        head = {"seq": head.get("seq", 0), "entry_hash": head.get("entry_hash", ""),
-                "chain_id": led.chain_id()}
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            "SELECT seq, ts, op, node_id, agent_id, source, digest, detail, prev_hash, entry_hash "
+            "FROM ledger ORDER BY seq ASC LIMIT ?", (memo["seq"],)).fetchall()
+        entries = [{"seq": r["seq"], "ts": r["ts"], "op": r["op"], "node_id": r["node_id"],
+                    "agent_id": r["agent_id"], "source": r["source"], "digest": r["digest"],
+                    "detail": json.loads(r["detail"] or "{}"),
+                    "prev_hash": r["prev_hash"], "entry_hash": r["entry_hash"]} for r in rows]
+        first = conn.execute("SELECT entry_hash FROM ledger WHERE seq=1").fetchone()
+        chain_id = first["entry_hash"] if first else ""
         source = f"local ledger {ledger_db}"
     else:
-        v = get_json(f"{base_url.rstrip('/')}/mesh/ledger/verify")
-        head = {"seq": v.get("anchor_seq", 0), "entry_hash": (v.get("head") or {}).get("entry_hash", ""),
-                "chain_id": v.get("chain_id", "")}
+        bundle = get_json(f"{base_url.rstrip('/')}/mesh/ledger/bundle?limit={memo['seq']}")
+        entries = bundle.get("entries") or []
+        chain_id = bundle.get("chain_id", "")
         source = f"public API {base_url} (trusted only as a claim)"
 
-    verdict = ProvenanceLedger.verify_anchor_memo(memo, head, entries=memo["entries"])
+    verdict = verify_prefix(memo, entries, chain_id=chain_id)
     print(f"\nchecked against {source}")
-    print(f"  local head seq {head['seq']}  hash {head['entry_hash'][:16]}…")
+    print(f"  export has {len(entries)} entries; anchored sequence is {memo['seq']}")
     print(f"  VERDICT: {'OK' if verdict['ok'] else 'REJECTED'} — {verdict['reason']}")
-    if verdict["ok"] and head["seq"] > memo["seq"]:
-        print(f"  the ledger has since grown {(head['seq'] - memo['seq'])} more entries, "
-              f"which is expected; the anchored prefix is intact")
+    if verdict["ok"]:
+        print(f"  the first {verdict['checked']} events recompute to the on-chain head and root; "
+              f"{verdict['entries_total'] - verdict['checked']} later events were ignored")
     return 0 if verdict["ok"] else 1
 
 

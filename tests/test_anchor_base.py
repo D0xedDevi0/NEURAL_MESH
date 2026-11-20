@@ -138,3 +138,78 @@ def test_something_that_is_not_an_anchor_is_never_accepted():
     for bad in ({}, {"scheme": "x"}, {"scheme": ""}, None, [], "a string"):
         r = Ledger.verify_anchor_memo(bad, head(GOOD["seq"], GOOD["head"]))
         assert r["ok"] is False, bad
+
+
+# --------------------------------------------------------------------------- #
+# verify_prefix — does a later export still contain the exact anchored prefix?
+# --------------------------------------------------------------------------- #
+import sqlite3
+import threading
+
+
+def _chain(n, start=1000):
+    conn = sqlite3.connect(":memory:")
+    conn.row_factory = sqlite3.Row
+    led = Ledger(lambda: conn, clock=iter(range(start, start + n)).__next__)
+    for i in range(n):
+        led.append("add", node_id=f"n{i}", source="test", detail={"i": i})
+    return led
+
+
+def _memo_from(led, n):
+    b = led.export_bundle(limit=n)
+    return {"scheme": "mesh-anchor-v1", "chain_id": 8453, "seq": n,
+            "head": b["entries"][-1]["entry_hash"], "merkle_root": b["merkle_root"],
+            "entries": n, "ledger": b["chain_id"]}
+
+
+def test_verify_prefix_accepts_the_exact_chain():
+    led = _chain(10)
+    memo = _memo_from(led, 10)
+    r = ab.verify_prefix(memo, [e.to_dict() for e in led.entries(limit=10)],
+                         chain_id=led.chain_id())
+    assert r["ok"] is True and r["checked"] == 10
+
+
+def test_verify_prefix_accepts_a_grown_ledger():
+    led = _chain(25)
+    memo = _memo_from(led, 10)
+    r = ab.verify_prefix(memo, [e.to_dict() for e in led.entries()],
+                         chain_id=led.chain_id())
+    assert r["ok"] is True and r["checked"] == 10 and r["entries_total"] == 25
+
+
+def test_verify_prefix_refuses_a_shorter_export():
+    led = _chain(10)
+    memo = _memo_from(led, 10)
+    r = ab.verify_prefix(memo, [e.to_dict() for e in led.entries(limit=9)],
+                         chain_id=led.chain_id())
+    assert r["ok"] is False and "not enough evidence" in r["reason"]
+
+
+def test_verify_prefix_flags_an_edited_entry():
+    # an entry's content changed but its hash was not recomputed — the export is
+    # internally inconsistent, which the per-entry re-derivation catches.
+    led = _chain(10)
+    memo = _memo_from(led, 10)
+    entries = [e.to_dict() for e in led.entries()]
+    entries[5]["detail"] = {"i": 999}
+    r = ab.verify_prefix(memo, entries, chain_id=led.chain_id())
+    assert r["ok"] is False and r["broken_at"] == 6
+
+
+def test_verify_prefix_flags_a_divergent_head():
+    # same sequence number, different head hash — the "history rewritten" case.
+    led = _chain(10)
+    memo = dict(_memo_from(led, 10), head="0" * 64)
+    r = ab.verify_prefix(memo, [e.to_dict() for e in led.entries()],
+                         chain_id=led.chain_id())
+    assert r["ok"] is False and "head" in r["reason"]
+
+
+def test_verify_prefix_refuses_a_different_ledger():
+    a, b = _chain(10), _chain(10, start=5000)
+    memo = _memo_from(a, 10)
+    r = ab.verify_prefix(memo, [e.to_dict() for e in b.entries(limit=10)],
+                         chain_id=b.chain_id())
+    assert r["ok"] is False and "different ledger" in r["reason"]
