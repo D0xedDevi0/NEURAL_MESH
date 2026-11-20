@@ -1,0 +1,46 @@
+{
+  "scheme": "mesh-ledger-v1",
+  "kind": "ledger-bundle",
+  "chain_id": "3b33ed2214d761086aff10633ec3f31e4fa0e209f8f7a8c6c41c2aa213cd01cf",
+  "head": {
+    "seq": 2,
+    "entry_hash": "190bcc9bfa727d09c81044026426fbc684cbba5d7c1668dec5fc81cc58a0e0d5",
+    "ts": 1001.0,
+    "chain_id": "3b33ed2214d761086aff10633ec3f31e4fa0e209f8f7a8c6c41c2aa213cd01cf",
+    "entries": 2,
+    "anchored": false,
+    "anchor_seq": 0
+  },
+  "entries": [
+    {
+      "seq": 1,
+      "ts": 1000.0,
+      "op": "add",
+      "node_id": "demo-note",
+      "agent_id": "",
+      "source": "synthetic-demo",
+      "digest": "",
+      "detail": {
+        "label": "draft"
+      },
+      "prev_hash": "",
+      "entry_hash": "3b33ed2214d761086aff10633ec3f31e4fa0e209f8f7a8c6c41c2aa213cd01cf"
+    },
+    {
+      "seq": 2,
+      "ts": 1001.0,
+      "op": "update",
+      "node_id": "demo-note",
+      "agent_id": "",
+      "source": "synthetic-demo",
+      "digest": "",
+      "detail": {
+        "label": "reviewed"
+      },
+      "prev_hash": "3b33ed2214d761086aff10633ec3f31e4fa0e209f8f7a8c6c41c2aa213cd01cf",
+      "entry_hash": "190bcc9bfa727d09c81044026426fbc684cbba5d7c1668dec5fc81cc58a0e0d5"
+    }
+  ],
+  "merkle_root": "3ebabd6b3170e1f8f81fb462dfce9f7d089a44adba6c2ac4d9973878e2a177bb",
+  "note": "verify offline with ProvenanceLedger.verify_bundle() \u2014 no mesh needed"
+}
