@@ -213,3 +213,30 @@ def test_verify_prefix_refuses_a_different_ledger():
     r = ab.verify_prefix(memo, [e.to_dict() for e in b.entries(limit=10)],
                          chain_id=b.chain_id())
     assert r["ok"] is False and "different ledger" in r["reason"]
+
+
+# --------------------------------------------------------------------------- #
+# verify_payload — the gate mode_send must clear before signing
+# --------------------------------------------------------------------------- #
+def test_verify_payload_fetches_the_full_ledger_and_recomputes(monkeypatch):
+    led = _chain(10)
+    memo = _memo_from(led, 10)
+    calls = []
+
+    def fake_get(url, timeout=25):
+        calls.append(url)
+        return led.export_bundle(limit=10)
+
+    monkeypatch.setattr(ab, "get_json", fake_get)
+    r = ab.verify_payload(memo, "https://api.d0xeddev.com")
+    assert r["ok"] is True and r["checked"] == 10
+    assert calls == ["https://api.d0xeddev.com/mesh/ledger/bundle?limit=10"]
+
+
+def test_verify_payload_refuses_a_divergent_root(monkeypatch):
+    # a wrong merkle_root in the memo is exactly what the sign gate must catch
+    led = _chain(10)
+    memo = dict(_memo_from(led, 10), merkle_root="0" * 64)
+    monkeypatch.setattr(ab, "get_json", lambda url, timeout=25: led.export_bundle(limit=10))
+    r = ab.verify_payload(memo, "https://api.d0xeddev.com")
+    assert r["ok"] is False and "Merkle root" in r["reason"]

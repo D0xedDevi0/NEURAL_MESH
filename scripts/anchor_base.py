@@ -162,38 +162,14 @@ def mode_dry(base_url: str, key_path: str | None) -> int:
     back = decode_memo(anchor["calldata"])
     print(f"calldata round-trips to the same memo: {back == memo}  ({anchor['bytes']} bytes)")
 
-    # recompute what we can from the entries we actually fetched, so the published
-    # root is not just a number the service asserted
-    bundle = get_json(f"{base_url.rstrip('/')}/mesh/ledger/bundle")
-    entries = sorted((bundle.get("entries") or []), key=lambda e: e["seq"])
-    if not entries:
-        print("\nbundle returned no entries — nothing to recompute")
+    # Recompute the root and head from the full ledger before anything is signed:
+    # the published memo is only as trustworthy as the numbers we can derive.
+    verdict = verify_payload(memo, base_url)
+    if verdict["ok"]:
+        print(f"\nroot and head recomputed from the full {verdict['checked']}-entry ledger: MATCH")
     else:
-        # the window chains against itself: each prev_hash must be the previous
-        # entry_hash. This works on a 500-entry page of a 3,686-entry ledger,
-        # which the merkle root does NOT.
-        breaks = [e["seq"] for i, e in enumerate(entries) if i and
-                  e.get("prev_hash") != entries[i - 1]["entry_hash"]]
-        lo, hi = entries[0]["seq"], entries[-1]["seq"]
-        print(f"\nwindow fetched: seq {lo}..{hi} ({len(entries)} entries)")
-        print(f"  window chains internally: {not breaks}"
-              + (f"  (breaks at seq {breaks})" if breaks else ""))
-
-        # a root over a page is a different number from a root over the ledger,
-        # so only compare when the page IS the ledger — otherwise say so rather
-        # than printing a False that looks like a failed check
-        if len(entries) == memo["entries"]:
-            local_root = merkle_root([e["entry_hash"] for e in entries])
-            print(f"  root recomputed from the full ledger: {local_root}")
-            print(f"  matches published merkle_root: {local_root == memo['merkle_root']}")
-        else:
-            print(f"  merkle_root NOT recomputed: the bundle returned {len(entries)} of "
-                  f"{memo['entries']} entries, and a root over a page is a different number. "
-                  f"Fetch the full ledger to reproduce it.")
-        tail = entries[-1]
-        print(f"  newest entry in window: seq {tail['seq']} hash {tail['entry_hash'][:16]}…")
-        print(f"  published head is seq {memo['seq']} — "
-              f"{'same entry' if tail['seq'] == memo['seq'] and tail['entry_hash'] == memo['head'] else 'ahead of the window, as expected' if tail['seq'] < memo['seq'] else 'BEHIND THE WINDOW — impossible'}")
+        print(f"\nroot and head DO NOT recompute from the ledger: {verdict['reason']}")
+        print("  → the memo must NOT be signed; --send would refuse it.")
 
     # price it
     if key_path:
@@ -234,6 +210,15 @@ def mode_send(base_url: str, key_path: str, sink: str, ledger_db: str | None) ->
         print(f"nothing to anchor: {anchor.get('reason')}")
         return 1
     memo = anchor["memo"]
+
+    # Signing is the write that leaves our infrastructure. Before it, derive the
+    # root and head from the actual entries ourselves — never sign a root the
+    # service merely asserted.
+    verdict = verify_payload(memo, base_url)
+    if not verdict["ok"]:
+        print(f"REFUSING to sign: the published memo does not match the ledger — {verdict['reason']}")
+        return 1
+    print(f"payload verified against {verdict['checked']} entries before signing")
 
     raw = pathlib.Path(key_path).read_text().strip()
     acct = Account.from_key(raw if raw.startswith("0x") else "0x" + raw)
@@ -309,6 +294,21 @@ def verify_prefix(memo: dict, entries: list, chain_id: str = "") -> dict:
             "entries_total": len(rows), "reason": "anchored prefix recomputed and intact"}
 
 
+def verify_payload(memo: dict, base_url: str) -> dict:
+    """Fetch the full ledger the memo claims and recompute its root and head.
+
+    The signable memo's ``merkle_root``/``head`` are numbers the *service*
+    asserted. Before we sign anything we must derive them ourselves from the
+    actual entries — otherwise a wrong root would become a signed, on-chain
+    claim about a ledger it does not describe. Returns the ``verify_prefix``
+    verdict, which is the gate ``mode_send`` must clear before broadcasting.
+    """
+    bundle = get_json(f"{base_url.rstrip('/')}/mesh/ledger/bundle?limit={memo['entries']}")
+    entries = bundle.get("entries") or []
+    chain_id = bundle.get("chain_id", "")
+    return verify_prefix(memo, entries, chain_id=chain_id)
+
+
 def mode_check(tx_hash: str, ledger_db: str | None, base_url: str) -> int:
     """The no-trust direction: read Base, decode the memo, compare to the ledger."""
     if not tx_hash.startswith("0x"):
@@ -351,11 +351,13 @@ def mode_check(tx_hash: str, ledger_db: str | None, base_url: str) -> int:
                     "prev_hash": r["prev_hash"], "entry_hash": r["entry_hash"]} for r in rows]
         first = conn.execute("SELECT entry_hash FROM ledger WHERE seq=1").fetchone()
         chain_id = first["entry_hash"] if first else ""
+        total_seq = conn.execute("SELECT MAX(seq) FROM ledger").fetchone()[0] or 0
         source = f"local ledger {ledger_db}"
     else:
         bundle = get_json(f"{base_url.rstrip('/')}/mesh/ledger/bundle?limit={memo['seq']}")
         entries = bundle.get("entries") or []
         chain_id = bundle.get("chain_id", "")
+        total_seq = (bundle.get("head") or {}).get("seq", len(entries))
         source = f"public API {base_url} (trusted only as a claim)"
 
     verdict = verify_prefix(memo, entries, chain_id=chain_id)
@@ -363,8 +365,11 @@ def mode_check(tx_hash: str, ledger_db: str | None, base_url: str) -> int:
     print(f"  export has {len(entries)} entries; anchored sequence is {memo['seq']}")
     print(f"  VERDICT: {'OK' if verdict['ok'] else 'REJECTED'} — {verdict['reason']}")
     if verdict["ok"]:
+        grown = total_seq - memo["seq"]
         print(f"  the first {verdict['checked']} events recompute to the on-chain head and root; "
-              f"{verdict['entries_total'] - verdict['checked']} later events were ignored")
+              f"{grown} later events were ignored" if grown else
+              f"  the first {verdict['checked']} events recompute to the on-chain head and root; "
+              f"the ledger has not grown past the anchor")
     return 0 if verdict["ok"] else 1
 
 
