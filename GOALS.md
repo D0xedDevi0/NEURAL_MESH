@@ -2,7 +2,7 @@
 
 > Owner: **D0xedDev / Cody** (@d0xb00m) · Co-pilot: Hermes (Devio)
 > Repo: `D0xedDevi0/NEURAL_MESH` (branch `master`) · Live: `https://api.d0xeddev.com`
-> Last updated: 2026-11-20 · Source package: **v0.46.0** · Production `/health`: **v0.45.0**, status `ok` (v0.46.0 adds client-side anchoring tooling plus a version-string bump only — prod server behavior is unchanged)
+> Last updated: 2026-11-20 · Source package: **v0.47.0** · Production `/health`: **v0.45.0**, status `ok` (v0.46.0 added client-side anchoring tooling; v0.47.0 adds authenticated entry signatures; both are client/source-side and prod server behavior is unchanged until redeploy)
 > The dated stages below are historical records. The **Current priorities** section is the active worklist.
 
 This is the **single source of truth for "what's next"**. It is goal-oriented on
@@ -124,6 +124,29 @@ needed or requested.
    server, db, wallet, or network); a `demos/offline-proof/` kit demonstrates a
    valid vs. a tampered record. The two anchors agree exactly on their shared
    3,943-event prefix: same head hash, same Merkle root.
+
+7. **Authenticated authorship — DONE (entry signatures, v0.47.0).** The ledger
+   can now prove *who* wrote each entry, not just that history is internally
+   consistent. A signer key (`ProvenanceLedger(signer=…)`) makes every appended
+   entry sign its own `entry_hash` (EIP-191 secp256k1, same EVM identity model as
+   the anchor signer); the recovered address is stored as the entry's `author`
+   alongside the 65-byte `sig`. `verify()`, `verify_bundle()`, and the offline
+   `verify_bundle.py` now check that each signed entry's signature recovers to
+   its claimed author, and report the signed/unsigned split instead of implying
+   every entry is authenticated.
+
+   - Forged or relabelled signatures fail by name (`kind="signature"`); unsigned
+     entries remain valid and are counted separately (honest unsigned claims).
+   - The hash chain + Merkle root stay Python-3.10-stdlib; signature recovery
+     needs `eth_account` (already a repo dep) and is reported honestly as
+     "present but not checked" when the library is absent — never silently passed.
+   - Schema migration widens an existing ledger in place (`ALTER TABLE … ADD
+     COLUMN author/sig`) without dropping data; `demos/signed_memory.py` shows a
+     signed bundle verifying, then a forged signature and an edited digest each
+     being rejected by name. `tests/test_ledger_signatures.py` pins the invariants.
+   - **Out of scope (follow-up):** wiring the production server to a signing key,
+     and an `agent_id → address` registry so a friendly name binds to a key (itself
+     anchored).
 
 ## Historical baseline (2026-08-14; retained for provenance, not instructions)
 

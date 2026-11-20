@@ -1078,6 +1078,7 @@ memory lane.
 - [x] **Prospective memory lane** — the "memory of the future": intentions surface before due (`upcoming`/`due_rank`), re-future via `snooze`, expired tracking
 - [x] **Working-memory token-budget optimizer** — context as a budget problem: greedy value-density fit, non-destructive priority eviction (`select_fit`)
 - [x] **Provenance ledger** — append-only hash-chained witness at the storage boundary: `verify_memory()`, `provenance_of()`, Merkle root + Base (8453) anchor payload, peer bundles, logged erasure (`forget_memory`)
+- [x] **Authenticated entry signatures** — a signer key makes every entry sign its own `entry_hash` (EIP-191 secp256k1); `verify`/`verify_bundle` recover the signer address and reject forged or relabelled signatures, while unsigned entries stay valid and are counted separately
 - [ ] Live Helixa signing (on-chain attestation) — gated behind human GO + key-held signer
 - [x] Ledger anchoring cron — `scripts/anchor_cron.sh` re-anchors the head to the external sink on a schedule; production is anchored as of v0.42.0
 - [x] Base anchor sender + third-party checker — `scripts/anchor_base.py` (dry by default, `send` needs `--approve`, `check-tx` needs no key) on top of `anchor_payload()` / `verify_anchor_memo()`

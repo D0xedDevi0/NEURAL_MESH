@@ -48,7 +48,13 @@ def verify(b, pin):
         raise ValueError('Merkle root mismatch')
     if pin is not None and pin != head['entry_hash']:
         raise ValueError('independently supplied head does not match')
-    return {**result, 'reason': 'event hashes, links and root agree', 'head_hash': head['entry_hash'], 'head_pin_checked': pin is not None}
+    extra = ''
+    if result.get('signed'):
+        extra = f"; {result['signed']} signed by their author"
+    if result.get('unchecked'):
+        extra += f"; {result['unchecked']} signatures present but not checked (eth-account unavailable)"
+    return {**result, 'reason': 'event hashes, links and root agree' + extra,
+            'head_hash': head['entry_hash'], 'head_pin_checked': pin is not None}
 
 
 def main():
