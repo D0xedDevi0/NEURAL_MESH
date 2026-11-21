@@ -12,4 +12,16 @@ python scripts/verify_identity_registry.py /external/identities.jsonl LEDGER_GEN
 
 The verifier checks the genesis, revision sequence, prior hash, address-control signatures, dual-signed rotations, and the independently supplied final head. It exits nonzero for a mismatch. `EMPTY` is allowed only for an intentionally empty initial registry.
 
-This is a source-side primitive, not a production identity service or on-chain anchor. No production binding exists until an actual agent authorizes one and its head is independently pinned. Existing unsigned or previously signed ledger entries must not be retroactively attributed to these addresses.
+This is a source-side primitive, not an identity service or an on-chain anchor. Production bindings exist (`d0xeddev`, `self`), retained with an independently pinned head under `ops/neural-mesh/` and re-checked daily from a different host. Existing unsigned ledger entries must not be retroactively attributed to these addresses.
+
+## Enforcement — a signature is not yet an identity
+
+Set `NEURAL_MESH_IDENTITY_REGISTRY` and `/mesh/ledger/verify` resolves the label of every signed entry through the registry **before** it reports `ok`. Without this, a valid signature only proves that *some* key wrote the entry — anyone holding any key could claim any label.
+
+* Signed entry under a label bound to a **different** address → hard failure (`kind: "binding"`). The signature is real; the label claim is not.
+* Registry missing, unreadable, or failing its own verification → **also** a failure. Deleting the registry must not switch the check off, so the check fails closed.
+* Signed entry under a label the registry does **not** bind → advisory: counted in `unbound_signed`, named in `unbound_labels`, with advice to bind it. Labels written before the registry existed still have to verify.
+* Unsigned entries are never binding-checked, and stay counted separately as `unsigned` so they can never read as authenticated.
+* Variable unset → `bindings_source` is empty and no binding is claimed, which is honest rather than safe.
+
+The report gains `bindings` (label → address), `bindings_source`, `unbound_signed`, `unbound_labels`, and `summary()` says how many labels were bound and how many signed entries sit under an unbound one.

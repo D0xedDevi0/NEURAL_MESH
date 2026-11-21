@@ -102,11 +102,18 @@ DB_PATH = os.environ.get("NEURAL_MESH_DB", os.path.join(os.path.dirname(__file__
 # sink, a clean truncation of the log is invisible to verify(); with one, the
 # surviving anchor line contradicts the cut.
 ANCHOR_FILE = os.environ.get("NEURAL_MESH_ANCHOR_FILE", "")
+# NEURAL_MESH_IDENTITY_REGISTRY points at the signed, externally pinned
+# agent_id -> address registry. With it set, /mesh/ledger/verify no longer treats
+# "this signature recovered" as sufficient: the signing address must be the one
+# the registry binds to the label the entry claims. Unset (the default), binding
+# is not checked and the report says so.
+IDENTITIES_PATH = os.environ.get("NEURAL_MESH_IDENTITY_REGISTRY", "")
 mesh = Mesh(
     db_path=DB_PATH,
     resonance_backend=os.environ.get("NEURAL_MESH_RESONANCE_BACKEND", "auto"),
     anchor_file=ANCHOR_FILE,
     signer=_load_signer_file(),
+    identities_path=IDENTITIES_PATH,
 )
 # Shared across Flask worker threads — attach it through the lock proxy so
 # concurrent requests can never step the same sqlite3 connection at once.

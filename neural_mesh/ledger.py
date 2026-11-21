@@ -391,6 +391,10 @@ class VerifyReport:
     signed: int = 0        # entries whose signature recovered to their author
     unsigned: int = 0      # entries with no signature
     unchecked: int = 0     # signed entries this process could not verify (no lib)
+    bindings: dict = field(default_factory=dict)  # label -> address, per the registry
+    bindings_source: str = ""   # registry consulted ('' = binding check not enabled)
+    unbound_signed: int = 0     # signed entries whose label has no binding (advisory)
+    unbound_labels: list = field(default_factory=list)
 
     @property
     def sinks_in_store_only(self) -> bool:
@@ -411,6 +415,10 @@ class VerifyReport:
                 tail += f", {self.signed} signed"
             if self.unchecked:
                 tail += f", {self.unchecked} signatures unverified here"
+            if self.bindings:
+                tail += f", {len(self.bindings)} label(s) bound"
+            if self.unbound_signed:
+                tail += f", {self.unbound_signed} signed under an unbound label"
             return (f"ledger OK — {self.checked} entries verified over {self.nodes} "
                     f"live memories{tail}; head #{self.head.get('seq', 0)}; "
                     f"anchored: {'yes @#' + str(self.anchor_seq) if self.anchored else 'no'}")
@@ -432,7 +440,8 @@ class ProvenanceLedger:
     """
 
     def __init__(self, get_conn: Callable[[], Any], clock: Callable[[], float] = time.time,
-                 lock: Any = None, anchor_file: str = "", signer: str = ""):
+                 lock: Any = None, anchor_file: str = "", signer: str = "",
+                 identities_path: str = ""):
         self._get_conn = get_conn
         self._clock = clock
         self._lock = lock
@@ -448,6 +457,13 @@ class ProvenanceLedger:
         # delete it along with the entries it protects. A sink outside the store
         # (another host, a git-committed file, a chain) is the actual remedy.
         self.anchor_file = anchor_file
+        # External, signed agent-identity registry (label -> address). When set,
+        # verify() stops accepting "a signature recovered" as sufficient: the key
+        # that signed an entry must ALSO be the address the registry binds to the
+        # label the entry claims. A signature proves *a* key wrote the entry;
+        # only the binding proves whose label it was written under. Left empty,
+        # binding is not checked at all - which is honest, not safe.
+        self._identities_path = identities_path
         self._ensure_schema()
 
     # -- storage helpers ----------------------------------------------------
@@ -737,11 +753,13 @@ class ProvenanceLedger:
         # I6 — authorship. A signed entry must recover to the address it claims.
         # This runs after the chain check so a rewritten entry_hash fails on the
         # chain before its (necessarily broken) signature is even consulted.
+        signed_ok: list = []
         for row in rows:
             e = self._entry(row)
             verdict = check_signature(e.entry_hash, e.sig, e.author)
             if verdict == "ok":
                 rep.signed += 1
+                signed_ok.append(e)
             elif verdict == "forged":
                 return self._fail(rep, e.seq, "signature", e.node_id,
                                   f"entry #{e.seq} claims author {e.author[:10]}… but "
@@ -751,6 +769,50 @@ class ProvenanceLedger:
                 rep.unchecked += 1
             else:
                 rep.unsigned += 1
+
+        # I7 - the label claim. I6 proves that the key which signed an entry is
+        # the key whose address is stored beside it; it says nothing about the
+        # agent_id in the same row. Without this check, anyone holding a key of
+        # their own could sign an entry claiming to be a label they do not
+        # control, and verify() would report it as authenticated authorship. The
+        # external registry is the only thing that ties a label to an address.
+        if self._identities_path:
+            rep.bindings_source = self._identities_path
+            from .identity_registry import verify_registry
+            reg = verify_registry(self._identities_path, rep.chain_id)
+            if not reg["ok"]:
+                # Fail closed: a registry that cannot be read, or does not
+                # verify, is exactly the state in which "everyone is who they
+                # say" would otherwise be assumed.
+                return self._fail(rep, 0, "binding", "",
+                                  f"identity registry {self._identities_path} does "
+                                  f"not verify ({reg['reason']}) - no label can be "
+                                  f"resolved, so every signed authorship claim is "
+                                  f"unchecked")
+            rep.bindings = {label: rec["address"]
+                            for label, rec in reg["bindings"].items()}
+            for e in signed_ok:
+                label = e.agent_id or "self"
+                want = rep.bindings.get(label)
+                if want is None:
+                    # Advisory, not fatal: labels that predate the registry still
+                    # have to verify, so an unbound write is counted and named
+                    # rather than silently treated as authenticated.
+                    rep.unbound_signed += 1
+                    if label not in rep.unbound_labels and len(rep.unbound_labels) < 20:
+                        rep.unbound_labels.append(label)
+                    continue
+                if want.lower() != e.author.lower():
+                    return self._fail(rep, e.seq, "binding", e.node_id,
+                                      f"entry #{e.seq} is signed by {e.author[:10]} "
+                                      f"but the identity registry binds {label} to "
+                                      f"{want[:10]} - the signature is real, the "
+                                      f"label claim is not")
+            if rep.unbound_signed:
+                lead = ("bind " + ", ".join(rep.unbound_labels)
+                        + " in the identity registry to attribute signed entries "
+                          "to a bound address")
+                rep.advice = f"{rep.advice} {lead}".strip() if rep.advice else lead
 
         # I4 — the anchored prefix, before the store comparison: a truncated log
         # is the more specific diagnosis, and it is what makes the difference

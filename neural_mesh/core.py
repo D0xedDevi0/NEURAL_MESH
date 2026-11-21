@@ -99,7 +99,8 @@ class Mesh:
                  lexical_backend: str = "bow",
                  query_rewrite: bool = False,
                  ledger: bool = True,
-                 anchor_file: str = "", signer: str = ""):
+                 anchor_file: str = "", signer: str = "",
+                 identities_path: str = ""):
         if default_recall not in {"resonance", "hybrid", "dense", "lexical"}:
             raise ValueError(
                 "default_recall must be 'resonance', 'hybrid', 'dense', or 'lexical'")
@@ -149,7 +150,8 @@ class Mesh:
         # owns the database. Left empty, anchoring still works but only in-store,
         # which is convenience, not security.
         self.ledger = (ProvenanceLedger(lambda: self.db, lock=self._db_lock,
-                                       anchor_file=anchor_file, signer=signer)
+                                       anchor_file=anchor_file, signer=signer,
+                                       identities_path=identities_path)
                        if ledger else None)
         # In-memory node cache so repeated retrieval doesn't reload SQLite every
         # call. `add`/`sleep`/`_supersede` invalidate it via _invalidate_cache.
