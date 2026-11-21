@@ -20,8 +20,9 @@ Set `NEURAL_MESH_IDENTITY_REGISTRY` and `/mesh/ledger/verify` resolves the label
 
 * Signed entry under a label bound to a **different** address → hard failure (`kind: "binding"`). The signature is real; the label claim is not.
 * Registry missing, unreadable, or failing its own verification → **also** a failure. Deleting the registry must not switch the check off, so the check fails closed.
+* `NEURAL_MESH_IDENTITY_HEAD` — the head retained off the registry host — is enforced when set. Internal consistency alone is something whoever writes the registry can arrange; a rewritten or silently extended registry fails with `independent head mismatch`.
 * Signed entry under a label the registry does **not** bind → advisory: counted in `unbound_signed`, named in `unbound_labels`, with advice to bind it. Labels written before the registry existed still have to verify.
 * Unsigned entries are never binding-checked, and stay counted separately as `unsigned` so they can never read as authenticated.
 * Variable unset → `bindings_source` is empty and no binding is claimed, which is honest rather than safe.
 
-The report gains `bindings` (label → address), `bindings_source`, `unbound_signed`, `unbound_labels`, and `summary()` says how many labels were bound and how many signed entries sit under an unbound one.
+The report gains `bindings` (label → address), `bindings_source`, `bindings_pinned`, `unbound_signed`, `unbound_labels`, and `summary()` says how many labels were bound and how many signed entries sit under an unbound one.

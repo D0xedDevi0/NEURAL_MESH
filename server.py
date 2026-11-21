@@ -108,12 +108,17 @@ ANCHOR_FILE = os.environ.get("NEURAL_MESH_ANCHOR_FILE", "")
 # the registry binds to the label the entry claims. Unset (the default), binding
 # is not checked and the report says so.
 IDENTITIES_PATH = os.environ.get("NEURAL_MESH_IDENTITY_REGISTRY", "")
+# The registry head retained independently of the registry host. When set, verify
+# rejects a registry that has been silently rewritten or extended: internal
+# consistency alone is something the writer of that registry can arrange.
+IDENTITIES_HEAD = os.environ.get("NEURAL_MESH_IDENTITY_HEAD", "")
 mesh = Mesh(
     db_path=DB_PATH,
     resonance_backend=os.environ.get("NEURAL_MESH_RESONANCE_BACKEND", "auto"),
     anchor_file=ANCHOR_FILE,
     signer=_load_signer_file(),
     identities_path=IDENTITIES_PATH,
+    identities_head=IDENTITIES_HEAD,
 )
 # Shared across Flask worker threads — attach it through the lock proxy so
 # concurrent requests can never step the same sqlite3 connection at once.

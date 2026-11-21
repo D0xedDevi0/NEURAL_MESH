@@ -157,3 +157,22 @@ def test_mesh_passes_identities_path_to_the_ledger():
     rep = mesh.verify_memory()
     assert rep.ok is False and rep.kind == "binding"
     mesh.db.close()
+
+
+def test_pinned_head_is_enforced(tmp_path):
+    # a registry can be internally consistent and still be a rewrite. The head
+    # retained off the registry host is what makes that detectable.
+    from neural_mesh.identity_registry import verify_registry
+    conn, led = _ledger(KEY_B)
+    path = tmp_path / "identities.jsonl"
+    _bind(path, led.chain_id(), "self", KEY_B)
+    head = verify_registry(str(path), led.chain_id())["head"]
+    led._identities_path, led._identities_head = str(path), head
+
+    rep = led.verify()
+    assert rep.ok is True and rep.bindings_pinned == head
+
+    led._identities_head = "f" * 64
+    rep = led.verify()
+    assert rep.ok is False and rep.kind == "binding"
+    assert "mismatch" in rep.reason

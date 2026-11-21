@@ -395,6 +395,7 @@ class VerifyReport:
     bindings_source: str = ""   # registry consulted ('' = binding check not enabled)
     unbound_signed: int = 0     # signed entries whose label has no binding (advisory)
     unbound_labels: list = field(default_factory=list)
+    bindings_pinned: str = ""   # independent registry head enforced ('' = not pinned)
 
     @property
     def sinks_in_store_only(self) -> bool:
@@ -441,7 +442,7 @@ class ProvenanceLedger:
 
     def __init__(self, get_conn: Callable[[], Any], clock: Callable[[], float] = time.time,
                  lock: Any = None, anchor_file: str = "", signer: str = "",
-                 identities_path: str = ""):
+                 identities_path: str = "", identities_head: str = ""):
         self._get_conn = get_conn
         self._clock = clock
         self._lock = lock
@@ -464,6 +465,10 @@ class ProvenanceLedger:
         # only the binding proves whose label it was written under. Left empty,
         # binding is not checked at all - which is honest, not safe.
         self._identities_path = identities_path
+        # The independently retained registry head. Without it, verification proves
+        # the registry is internally consistent - which a writer of that registry
+        # can arrange. With it, a rewritten or silently extended registry is caught.
+        self._identities_head = identities_head
         self._ensure_schema()
 
     # -- storage helpers ----------------------------------------------------
@@ -778,8 +783,10 @@ class ProvenanceLedger:
         # external registry is the only thing that ties a label to an address.
         if self._identities_path:
             rep.bindings_source = self._identities_path
+            rep.bindings_pinned = self._identities_head
             from .identity_registry import verify_registry
-            reg = verify_registry(self._identities_path, rep.chain_id)
+            reg = verify_registry(self._identities_path, rep.chain_id,
+                                  self._identities_head or None)
             if not reg["ok"]:
                 # Fail closed: a registry that cannot be read, or does not
                 # verify, is exactly the state in which "everyone is who they
