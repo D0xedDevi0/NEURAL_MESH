@@ -5,6 +5,7 @@ bus, resonance retrieval, and the nightly SLEEP cycle. Pure stdlib.
 """
 from __future__ import annotations
 
+import json
 import os
 import sqlite3
 import threading
@@ -98,7 +99,7 @@ class Mesh:
                  lexical_backend: str = "bow",
                  query_rewrite: bool = False,
                  ledger: bool = True,
-                 anchor_file: str = ""):
+                 anchor_file: str = "", signer: str = ""):
         if default_recall not in {"resonance", "hybrid", "dense", "lexical"}:
             raise ValueError(
                 "default_recall must be 'resonance', 'hybrid', 'dense', or 'lexical'")
@@ -148,7 +149,7 @@ class Mesh:
         # owns the database. Left empty, anchoring still works but only in-store,
         # which is convenience, not security.
         self.ledger = (ProvenanceLedger(lambda: self.db, lock=self._db_lock,
-                                       anchor_file=anchor_file)
+                                       anchor_file=anchor_file, signer=signer)
                        if ledger else None)
         # In-memory node cache so repeated retrieval doesn't reload SQLite every
         # call. `add`/`sleep`/`_supersede` invalidate it via _invalidate_cache.
@@ -241,8 +242,17 @@ class Mesh:
               force: bool = False, actor: str = ""):
         self.db.execute("REPLACE INTO nodes VALUES (?,?,?,?,?,?)",
                         _node_row(node))
-        self.db.commit()
-        _after_save(self, node, op=op, source=source, force=force, actor=actor)
+        if getattr(self, "ledger", None) is not None and self.ledger._signer:
+            try:
+                _after_save(self, node, op=op, source=source, force=force, actor=actor)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                self._invalidate_cache()
+                raise
+        else:
+            self.db.commit()
+            _after_save(self, node, op=op, source=source, force=force, actor=actor)
 
     def _save_many(self, nodes: "list[MemoryNode]", op: str = "",
                    source: str = "", force: bool = False, actor: str = "",
@@ -279,9 +289,21 @@ class Mesh:
         rows = [_node_row(n) for n in nodes]
         written = list(nodes)
         if updates and _json_set_available(self.db):
-            self.db.executemany(_LINK_SET_SQL,
-                                [(_link_path(key), w, node.id)
-                                 for node, key, w in updates])
+            safe = [(node, key, w) for node, key, w in updates if '"' not in key]
+            unsafe = [(node, key, w) for node, key, w in updates if '"' in key]
+            if safe:
+                self.db.executemany(_LINK_SET_SQL,
+                                    [(_link_path(key), w, node.id)
+                                     for node, key, w in safe])
+            # SQLite 3.46 rejects escaped quotes inside JSON paths. For such
+            # keys update the stored map by id; do not overwrite earlier deltas.
+            for node, key, w in unsafe:
+                row = self.db.execute("SELECT links FROM nodes WHERE id=?", (node.id,)).fetchone()
+                if row is not None:
+                    links = json.loads(row[0] or "{}")
+                    links[key] = w
+                    self.db.execute("UPDATE nodes SET links=? WHERE id=?",
+                                    (json.dumps(links), node.id))
             written.extend(node for node, _key, _w in updates)
         elif updates:
             # No json1: the neighbour rows are rewritten whole, exactly as this
@@ -290,14 +312,25 @@ class Mesh:
             written.extend(node for node, _key, _w in updates)
         if rows:
             self.db.executemany("REPLACE INTO nodes VALUES (?,?,?,?,?,?)", rows)
-        self.db.commit()
+        ledger = getattr(self, "ledger", None)
+        signed = ledger is not None and bool(ledger._signer)
+        if not signed:
+            self.db.commit()
         seen: set = set()
-        for node in written:
-            if node.id in seen:
-                continue
-            seen.add(node.id)
-            _after_save(self, node, op=op, source=source, force=force,
-                        actor=actor)
+        try:
+            for node in written:
+                if node.id in seen:
+                    continue
+                seen.add(node.id)
+                _after_save(self, node, op=op, source=source, force=force,
+                            actor=actor)
+            if signed:
+                self.db.commit()
+        except Exception:
+            if signed:
+                self.db.rollback()
+                self._invalidate_cache()
+            raise
 
     def _touch(self, node: MemoryNode, writeback: bool = True):
         """Update access stats. `writeback=False` skips the expensive SQLite

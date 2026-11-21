@@ -58,6 +58,55 @@ def test_check_signature_verdicts():
 # --------------------------------------------------------------------------- #
 # signed ledger behaviour
 # --------------------------------------------------------------------------- #
+def test_configured_signer_fails_closed(monkeypatch):
+    conn = _conn()
+    led = ProvenanceLedger(lambda: conn, signer=SIGNER_KEY)
+    monkeypatch.setattr("neural_mesh.ledger.sign_entry", lambda *a: (_ for _ in ()).throw(ValueError("sign failed")))
+    with pytest.raises(ValueError, match="sign failed"):
+        led.append("add", node_id="n")
+    assert conn.execute("SELECT count(*) FROM ledger").fetchone()[0] == 0
+
+
+def test_mesh_signs_and_rolls_back_failed_single_write(monkeypatch):
+    from neural_mesh import Mesh
+    mesh = Mesh(":memory:", validator=False, signer=SIGNER_KEY)
+    mesh.add("signed", agent_id="self")
+    assert mesh.db.execute("SELECT count(*) FROM ledger WHERE sig != ''").fetchone()[0] > 0
+    monkeypatch.setattr("neural_mesh.ledger.sign_entry", lambda *a: (_ for _ in ()).throw(ValueError("sign failed")))
+    with pytest.raises(ValueError, match="sign failed"):
+        mesh.add("should not persist", agent_id="self")
+    assert mesh.db.execute("SELECT count(*) FROM nodes").fetchone()[0] == 1
+    mesh.db.close()
+
+
+def test_server_signer_file_is_private_and_valid(tmp_path, monkeypatch):
+    import server
+    path = tmp_path / "key"
+    path.write_text(SIGNER_KEY + "\n")
+    path.chmod(0o600)
+    monkeypatch.setenv("NEURAL_MESH_SIGNER_FILE", str(path))
+    assert server._load_signer_file() == SIGNER_KEY
+    path.chmod(0o644)
+    with pytest.raises(PermissionError):
+        server._load_signer_file()
+    path.chmod(0o600)
+    path.write_text("invalid")
+    with pytest.raises(ValueError, match="signer"):
+        server._load_signer_file()
+
+
+def test_signed_batch_save_rolls_back_on_sign_failure(monkeypatch):
+    from neural_mesh import Mesh
+    mesh = Mesh(":memory:", validator=False, signer=SIGNER_KEY)
+    nodes = mesh.add_many(["first", "second"], agent_id="self", autolink=False)
+    before = mesh.db.execute("SELECT count(*) FROM ledger").fetchone()[0]
+    monkeypatch.setattr("neural_mesh.ledger.sign_entry", lambda *a: (_ for _ in ()).throw(ValueError("sign failed")))
+    with pytest.raises(ValueError, match="sign failed"):
+        mesh._save_many(nodes, op="assert", force=True)
+    assert mesh.db.execute("SELECT count(*) FROM ledger").fetchone()[0] == before
+    mesh.db.close()
+
+
 def test_signed_entries_carry_author_and_sig():
     conn, led = _signed_chain(3)
     rows = conn.execute("SELECT * FROM ledger ORDER BY seq").fetchall()

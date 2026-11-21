@@ -533,13 +533,13 @@ class ProvenanceLedger:
                                  detail_json, prev_hash)
         author = sig = ""
         if self._signer:
-            # Sign the entry hash with the author key. A failed sign (bad key,
-            # missing dep) leaves the entry unsigned rather than aborting the
-            # write — an unsigned entry is honest; a crashed write is not.
+            # Configured signing must fail closed, never emit an unsigned claim.
             try:
                 author, sig = sign_entry(entry_hash, self._signer)
             except Exception:
-                author = sig = ""
+                if began:
+                    conn.rollback()
+                raise
         conn.execute("UPDATE ledger SET entry_hash=?, author=?, sig=? WHERE seq=?",
                      (entry_hash, author, sig, seq))
         if began:

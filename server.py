@@ -10,7 +10,7 @@ Usage:
 Health check: curl http://localhost:4021/health
 """
 
-import sys, os, sqlite3
+import sys, os, sqlite3, stat
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -71,6 +71,28 @@ def harden_response(resp):
     resp.headers.setdefault("X-Content-Type-Options", "nosniff")
     return resp
 
+def _load_signer_file() -> str:
+    """Load an optional private signing key; reject weak permissions and bad keys."""
+    path = os.environ.get("NEURAL_MESH_SIGNER_FILE", "")
+    if not path:
+        return ""
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        info = os.fstat(fd)
+        if not stat.S_ISREG(info.st_mode) or (info.st_mode & 0o077):
+            raise PermissionError("signer file must be regular and mode 0600 or stricter")
+        if info.st_size > 128:
+            raise ValueError("invalid signer file length")
+        key = os.read(fd, 129).decode("ascii").strip()
+        if len(key) != 66 or not key.startswith("0x") or any(c not in "0123456789abcdefABCDEF" for c in key[2:]):
+            raise ValueError("invalid signer key format")
+        from eth_account import Account
+        Account.from_key(key)
+        return key
+    finally:
+        os.close(fd)
+
+
 # Persist to a file so data survives restarts.
 # Set check_same_thread=False because Flask's dev server uses threads.
 DB_PATH = os.environ.get("NEURAL_MESH_DB", os.path.join(os.path.dirname(__file__), "mesh.db"))
@@ -84,6 +106,7 @@ mesh = Mesh(
     db_path=DB_PATH,
     resonance_backend=os.environ.get("NEURAL_MESH_RESONANCE_BACKEND", "auto"),
     anchor_file=ANCHOR_FILE,
+    signer=_load_signer_file(),
 )
 # Shared across Flask worker threads — attach it through the lock proxy so
 # concurrent requests can never step the same sqlite3 connection at once.
