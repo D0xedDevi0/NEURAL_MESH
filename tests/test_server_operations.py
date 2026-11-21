@@ -34,6 +34,12 @@ class TestOperationalEndpoints(unittest.TestCase):
             server.mesh.stats()["resonance_backend"],
         )
 
+    def test_mesh_health_alias_matches_root_health(self):
+        root = self.client.get("/health")
+        alias = self.client.get("/mesh/health")
+        self.assertEqual(alias.status_code, 200)
+        self.assertEqual(alias.get_json(), root.get_json())
+
     def test_consolidate_endpoint_promotes_durable_hot_node(self):
         node = server.mesh.add("durable procedure", lane="hot", trust=0.9)
         node.created_at = time.time() - 10

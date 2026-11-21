@@ -124,6 +124,9 @@ lifecycle = MemoryLifecycle(
 
 # ─── Health ────────────────────────────────────────────────────────────────
 
+# Same handler under the /mesh/ namespace: every other read-only mesh route is
+# namespaced, so a mesh-scoped health probe should not 404.
+@app.route("/mesh/health", methods=["GET"])
 @app.route("/health", methods=["GET"])
 def health():
     # Count nodes from the thread-safe db connection
