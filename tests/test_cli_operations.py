@@ -53,5 +53,78 @@ class TestOperationalCLI(unittest.TestCase):
             self.assertNotIn("private trace", summary.stdout)
 
 
+class TestLedgerVerifyCLI(unittest.TestCase):
+    """`ledger verify` must consult the identity registry and must fail loudly.
+
+    A verification run that ignores the registry silently accepts a ledger whose
+    label->address bindings were swapped, and a run that exits 0 on a failed
+    verdict makes any CI gate built on it pass no matter what. Both regressions
+    are pinned here.
+    """
+
+    def run_cli(self, *args, env=None):
+        e = dict(os.environ)
+        if env:
+            e.update(env)
+        return subprocess.run(
+            [os.environ.get("PYTHON", "python3"), "-m", "neural_mesh", *args],
+            text=True,
+            capture_output=True,
+            check=False,
+            env=e,
+        )
+
+    def _seed(self, db):
+        subprocess.run(
+            [os.environ.get("PYTHON", "python3"), "-c",
+             "from neural_mesh import Mesh;"
+             f"Mesh({db!r}).add('seed entry', agent_id='self')"],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+
+    def test_verify_exit_code_follows_the_verdict(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "mesh.db")
+            self._seed(db)
+
+            intact = self.run_cli("ledger", "verify", "--db", db)
+            self.assertEqual(intact.returncode, 0, intact.stderr)
+            self.assertTrue(json.loads(intact.stdout)["ok"])
+
+            broken = self.run_cli("ledger", "verify", "--db", db,
+                                  "--identities", os.path.join(d, "missing.jsonl"))
+            self.assertEqual(broken.returncode, 1, broken.stdout)
+            rep = json.loads(broken.stdout)
+            self.assertFalse(rep["ok"])
+            self.assertEqual(rep["kind"], "binding")
+
+    def test_verify_honours_identity_registry_env(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "mesh.db")
+            self._seed(db)
+            r = self.run_cli(
+                "ledger", "verify", "--db", db,
+                env={"NEURAL_MESH_IDENTITY_REGISTRY": os.path.join(d, "missing.jsonl")})
+            self.assertEqual(r.returncode, 1, r.stdout)
+            self.assertEqual(json.loads(r.stdout)["kind"], "binding")
+
+
+class TestVersionSurface(unittest.TestCase):
+    """The version is printed from one source; a hand-maintained string drifts."""
+
+    def _run(self, *args):
+        return subprocess.run(
+            [os.environ.get("PYTHON", "python3"), "-m", "neural_mesh", *args],
+            text=True, capture_output=True, check=False)
+
+    def test_help_banner_and_version_agree_with_the_package(self):
+        import neural_mesh
+        ver = neural_mesh.__version__
+        self.assertIn(f"v{ver}", self._run("--help").stdout)
+        self.assertIn(ver, self._run("version").stdout)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -161,7 +161,15 @@ def cmd_ledger(args):
     from neural_mesh import Mesh
     # --anchors points at an anchor sink OUTSIDE the store: verification then judges
     # the log against a record the database's own owner cannot rewrite.
-    mesh = Mesh(args.db or "mesh.db", anchor_file=getattr(args, "anchors", "") or "")
+    # The identity pin is part of the guarantee, not a server-only nicety: a
+    # verification run that ignores the registry silently accepts a ledger whose
+    # label->address bindings were swapped. Honour the same env the server reads
+    # and allow explicit flags, so a clean install can also verify a pinned
+    # registry without exporting anything.
+    identities_path = args.identities or os.environ.get("NEURAL_MESH_IDENTITY_REGISTRY", "")
+    identities_head = args.identities_head or os.environ.get("NEURAL_MESH_IDENTITY_HEAD", "")
+    mesh = Mesh(args.db or "mesh.db", anchor_file=getattr(args, "anchors", "") or "",
+                identities_path=identities_path, identities_head=identities_head)
     action = args.action
     if action == "verify":
         rep = mesh.verify_memory()
@@ -201,9 +209,11 @@ def cmd_ledger(args):
 
 
 def main():
+    # Single source of truth for the version — never a hand-maintained string.
+    from neural_mesh import __version__ as _ver
     p = argparse.ArgumentParser(
         prog="neural-mesh",
-        description="Self-organizing agentic memory mesh — v0.47.0")
+        description=f"Self-organizing agentic memory mesh — v{_ver}")
     sp = p.add_subparsers(dest="cmd")
 
     # export
@@ -270,6 +280,10 @@ def main():
     p_ledger.add_argument("--target", default="local", help="anchor target label")
     p_ledger.add_argument("--anchors", default="",
                           help="anchor sink file outside the store (verify/anchor)")
+    p_ledger.add_argument("--identities", default="",
+                          help="identity registry file binding labels to addresses (verify)")
+    p_ledger.add_argument("--identities-head", default="",
+                          help="independently retained registry head; verify fails closed if it moved")
 
     # version
     sp.add_parser("version", help="Print version")
@@ -297,12 +311,15 @@ def main():
     elif args.cmd == "rust-info":
         cmd_rust_info(args)
     elif args.cmd == "ledger":
-        cmd_ledger(args)
+        # Propagate the verdict: a verification that fails must not exit 0, or a
+        # CI gate built on it passes whether or not the ledger is intact.
+        return cmd_ledger(args)
     elif args.cmd == "version":
-        print(f"NEURAL_MESH v{__import__('neural_mesh').__version__}")
+        print(f"NEURAL_MESH v{_ver}")
     else:
         p.print_help()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
