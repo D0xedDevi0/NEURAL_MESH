@@ -129,6 +129,22 @@ class Mesh:
         # for the lock rather than fail the write. Without this, concurrent
         # handles raise "database is locked" and the write is silently lost.
         self.db.execute("PRAGMA busy_timeout=10000")
+        # WAL keeps the nightly DREAM/SLEEP cycles off the fsync floor. Every
+        # _save() commits, and on a rollback-journal database with
+        # synchronous=FULL each commit pays a journal fsync plus a db fsync.
+        # Measured on the 58 MB production mesh, 2026-11-23:
+        #   2.7 commits/s (rollback journal, sync=FULL) vs 36k commits/s in
+        #   WAL + synchronous=NORMAL, so a DREAM pass over ~1.5k live nodes
+        #   goes from ~45 minutes (past every caller timeout) to minutes.
+        # NEURAL_MESH_SQLITE_JOURNAL=delete restores the old behaviour on
+        # filesystems that cannot host WAL's shared-memory file.
+        _journal = os.environ.get("NEURAL_MESH_SQLITE_JOURNAL", "wal").lower()
+        if _journal in ("wal", "delete", "truncate", "persist", "memory", "off"):
+            self.db.execute(f"PRAGMA journal_mode={_journal}")
+            if _journal == "wal":
+                # Durable across process crashes; only a host power cut can
+                # drop the final transactions.
+                self.db.execute("PRAGMA synchronous=NORMAL")
         self.embedder = embedder
         self.link_threshold = link_threshold
         self.resonance_backend = resonance_backend
