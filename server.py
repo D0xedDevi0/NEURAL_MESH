@@ -10,7 +10,7 @@ Usage:
 Health check: curl http://localhost:4021/health
 """
 
-import sys, os, sqlite3, stat
+import sys, os, sqlite3, stat, threading
 sys.path.insert(0, os.path.dirname(__file__))
 
 from flask import Flask, request, jsonify, send_from_directory
@@ -836,6 +836,16 @@ def pointer_summary():
 
 # ─── DREAM ─────────────────────────────────────────────────────────────────
 
+# One DREAM cycle at a time. The dev server is threaded and the cycle walks
+# every live node with a commit (and therefore an fsync) per node, so two
+# overlapping cycles do not just double the wall clock: they interleave phase
+# loops op-by-op on the shared connection lock and both miss every timeout the
+# caller uses. Observed 2026-11-23: four stacked dreams on a 3.8k-node mesh,
+# none finished inside 15 minutes. Second caller now gets 409 + Retry-After.
+_dream_lock = threading.Lock()
+DREAM_BUSY_RETRY_AFTER = 30
+
+
 @app.route("/mesh/dream", methods=["POST"])
 def dream():
     """Run DREAM consolidation cycle. Body: {muse?: "template"|"llm"|false, options?}.
@@ -844,9 +854,25 @@ def dream():
     muse="template" (default) generates rule-based insights from surviving clusters.
     muse="llm" calls an LLM (requires OPENROUTER_API_KEY).
     muse=false skips insight generation.
+
+    Serialized: a second caller while a cycle is in flight gets 409 with a
+    Retry-After header instead of stacking another full pass.
     """
     data = request.get_json() or {}
     muse_mode = data.get("muse", "template")
+
+    if not _dream_lock.acquire(blocking=False):
+        body, status = _json_error("dream cycle already running", 409)
+        body.headers["Retry-After"] = str(DREAM_BUSY_RETRY_AFTER)
+        return body, status
+    try:
+        return _run_dream(data, muse_mode)
+    finally:
+        _dream_lock.release()
+
+
+def _run_dream(data, muse_mode):
+    """DREAM cycle body. The caller holds ``_dream_lock``."""
 
     muse_fn = None
     if muse_mode == "template":

@@ -118,16 +118,26 @@ def dream(mesh, decay: float = 0.9, reinforce_k: int = 3, min_link: float = 0.05
         "author_boosted": 0, "insights": [],
     }
     live = [n for n in nodes.values() if not n.superseded_by]
+    total = len(live)
+    _step = max(1, total // 10)
+
+    def _tick(phase: str, done: int) -> None:
+        """Phase heartbeat. Each phase below is fsync-bound for minutes on a
+        mesh this size, so without one an operator can only tell the cycle is
+        alive by attaching a profiler to the server process."""
+        if total and (done == total or done % _step == 0):
+            print(f"[dream] {phase} {done}/{total}", flush=True)
 
     # D — Drift: age-based resonance decay
-    for n in live:
+    for _i, n in enumerate(live, 1):
         age_days = max(0.0, (now - n.last_accessed) / 86400.0)
         n.resonance = max(0.0, n.resonance * (decay ** age_days))
         report["drifted"] += 1
         mesh._save(n)
+        _tick("drift", _i)
 
     # E — Evaluate: attribution-weighted trust recompute
-    for n in live:
+    for _i, n in enumerate(live, 1):
         w = _author_weight(mesh, n)
         # fold author weight into effective trust used downstream
         n.meta = dict(getattr(n, "meta", {}) or {})
@@ -135,11 +145,12 @@ def dream(mesh, decay: float = 0.9, reinforce_k: int = 3, min_link: float = 0.05
         if w > n.trust:
             report["author_boosted"] += 1
         mesh._save(n)
+        _tick("evaluate", _i)
 
     # R — Reinforce: Hebbian co-retrieval link strengthening
     if reinforce:
         # replay each node as a query, find its top-k nearest; bump their link
-        for n in live:
+        for _i, n in enumerate(live, 1):
             qe = n.embedding
             scored = sorted(
                 ((_cosine(qe, o.embedding), o) for o in live if o.id != n.id),
@@ -155,9 +166,10 @@ def dream(mesh, decay: float = 0.9, reinforce_k: int = 3, min_link: float = 0.05
                 report["reinforced"] += 1
                 mesh._save(o)
             mesh._save(n)
+            _tick("reinforce", _i)
 
     # A — Archive: prune weak/old/low-trust (and unverified-author) nodes
-    for n in live:
+    for _i, n in enumerate(live, 1):
         if n.superseded_by:
             continue
         age_days = max(0.0, (now - n.last_accessed) / 86400.0)
@@ -166,6 +178,7 @@ def dream(mesh, decay: float = 0.9, reinforce_k: int = 3, min_link: float = 0.05
             n.superseded_by = "__pruned__"
             mesh._save(n)
             report["archived"] += 1
+        _tick("archive", _i)
 
     # M — Muse: synthesize insights from surviving clusters (echo-chamber guarded)
     if muse_fn:
