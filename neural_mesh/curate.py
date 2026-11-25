@@ -154,6 +154,12 @@ def rare_overlap(a: str, b: str) -> float:
 # Values start with a digit, a version marker or a URL — but a name like
 # ``d0xeddev`` is a subject, not a value, so only the *leading* char decides.
 _VALUE_TOKEN = re.compile(r"^(\d|https?://|www\.)", re.I)
+# A compound assertion joined by "and" is two facts, and treating it as one
+# means a later correction of the port silently drops the RPC clause. Only split
+# when the next segment starts like a clause (determiner/pronoun), so ordinary
+# noun coordination ("logging and tracing") survives.
+_COMPOUND = re.compile(
+    r";\s+|\s+and\s+(?=(?:the|a|an|its|our|your|their|his|her|it)\s)", re.I)
 _VERB_SPLIT = re.compile(
     r"\b(is|are|was|were|has|have|had|uses|runs|means|lives|lived|prefers|"
     r"costs|requires|deploys|owns|contains|points|sits|stores)\b", re.I)
@@ -220,7 +226,10 @@ def extract_facts(text: str, *, max_facts: int = 200) -> list:
         parts = [line]
         if len(line) > 220:
             parts = [p.strip() for p in re.split(r"(?<=[.!])\s+", line)]
+        expanded: list = []
         for part in parts:
+            expanded.extend(_COMPOUND.split(part))
+        for part in expanded:
             candidate = _FILLER.sub("", part).strip(" -—•*`\"'")
             candidate = _TRAILING.sub("", candidate)
             if not is_fact_like(candidate):

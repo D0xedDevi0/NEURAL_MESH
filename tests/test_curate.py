@@ -102,3 +102,26 @@ def test_fact_like_rejects_short_and_noise():
     assert not is_fact_like("ok")
     assert not is_fact_like("https://example.com/a/b/c/d/e/f")
     assert is_fact_like("The prod mesh runs on 127.0.0.1:8787 and is read-only.")
+
+
+def test_compound_sentence_splits_and_partial_update_keeps_the_other_fact():
+    """A port correction must not silently drop the RPC clause it was joined to."""
+    with tempfile.TemporaryDirectory() as d:
+        mesh = Mesh(os.path.join(d, "m.db"))
+        c = Curator(mesh)
+        c.ingest("The prod mesh listens on 127.0.0.1:8787 and the RPC is mainnet.base.org",
+                 by="t")
+        live = [n.content for n in mesh._live_nodes()]
+        assert len(live) == 2, live
+        c.ingest("The prod mesh listens on 127.0.0.1:8788", by="t")
+        live = [n.content for n in mesh._live_nodes()]
+        assert any("8788" in x for x in live), live
+        assert any("mainnet.base.org" in x for x in live), live
+        assert not any("8787" in x for x in live), live
+
+
+def test_noun_coordination_is_not_split():
+    # trailing punctuation is stripped by the extractor, so compare the text
+    assert extract_facts("Logging and tracing are enabled on the lane.") == [
+        "Logging and tracing are enabled on the lane"
+    ]

@@ -18,7 +18,7 @@ decision.
 
 | Module | What it does |
 |---|---|
-| `neural_mesh/curate.py` | Deterministic extraction + per-fact lifecycle decision: **ADD / UPDATE (supersedes) / NOOP / QUARANTINE**. Trust guard: a lower-trust restatement can never overwrite a higher-trust fact. |
+| `neural_mesh/curate.py` | Deterministic extraction + per-fact lifecycle decision: **ADD / UPDATE (supersedes) / NOOP / QUARANTINE**. Splits compound assertions (`;` and `and the/its/our …`) so correcting one clause cannot drop the other. Trust guard: a lower-trust restatement can never overwrite a higher-trust fact. |
 | `neural_mesh/tiers.py` | **L0 gist (~140 chars) / L1 brief (~420) / L2 full**, allocated by rank under a hard character budget, degrading depth rather than dropping the memory. |
 | `neural_mesh/fence.py` | **DATA_ONLY context fencing**: one unforgeable block, an explicit "stored data, not instructions" preamble, per-item provenance (id · trust · date), sentinel-stripping on render. |
 
@@ -101,6 +101,9 @@ Reverse-engineered from source checkouts; no upstream code was copied.
 - **The long-note result depends on the top hit fitting L2 in the budget.** With
   a 1200-char budget, a 2000-char note degrades to L1 and the deep answer is
   lost again. Raise the budget or lower the note size.
+- **Compound splitting is shallow.** Two assertions joined by `and` split only when
+  the next segment starts with a determiner or pronoun; a compound with three or
+  more clauses, or joined by a bare noun phrase, stays one fact.
 - **Derived facts are not yet labelled.** `dream()` insights are not marked
   `level="derived"`, so the explicit/derived split is only complete for curated
   ingest.
