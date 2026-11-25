@@ -95,6 +95,33 @@ only what's *current and relevant*.
 
 ---
 
+## 🟦 v0.49.0 — curation in, context out (2026-11-25)
+
+Two gaps, both measured, neither about retrieval speed:
+
+- **Facts were never written down.** Stock mesh: 0–5% hit@5 on 20 real ops
+  questions. Same mesh with curated facts: 90%. Ingest was the bottleneck.
+- **Injected context had one shape.** Every hit was "first 400 chars", so an
+  answer past char 400 was silently gone.
+
+New in this release:
+
+- `neural_mesh/curate.py` — deterministic **ADD / UPDATE (supersedes) / NOOP /
+  QUARANTINE** with a trust guard and a restatement check that will not let a
+  harmless rephrase overwrite the stored wording.
+- `neural_mesh/tiers.py` — **L0 gist / L1 brief / L2 full**, allocated by rank
+  under a hard budget; depth degrades, the memory does not disappear.
+- `neural_mesh/fence.py` — **DATA_ONLY fencing** with per-item provenance, so a
+  poisoned memory reads as data instead of instruction.
+- Hermes plugin: `mesh_curate` tool, `mesh_recall detail=`, fenced prefetch, and
+  compression/session-end hooks now curate facts instead of storing blobs.
+
+Measured (`bench/curation_bench.py`, no LLM): curation 17/17 labelled cases;
+short facts flat-400 **281** vs tiered **641** chars (flat wins, and we say so);
+long notes 880 chars with the answer at offset 726 — flat-400 **0/8**, tiered
+**8/8**, 26% fewer chars. Evidence and honest limits:
+[`docs/v049-curation-and-context.md`](docs/v049-curation-and-context.md).
+
 ## ⚡ v0.21.0 — Rust-accelerated resonance (the newest hotness)
 
 Resonance query scoring now runs an optional **Rust/PyO3 hot path** in production
