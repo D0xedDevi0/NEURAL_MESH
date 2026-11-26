@@ -789,11 +789,23 @@ class Mesh:
         (see ``_apply_score_floor``); both default off, preserving the historic
         always-full-top_k behaviour."""
         qe = self._embed_query(query)
-        ql = self._lex_emb(query)
+        live = self._live_nodes(lane)
+        if self.lexical_backend == "bm25":
+            # With the zero-dep embedder the "dense" vector and the hashed-BoW
+            # vector are the same function, so fusing them is a no-op that still
+            # scores like bag-of-words and buries exact rare terms. BM25 is a
+            # genuine second opinion: rare discriminating terms win, boilerplate
+            # damps out. Normalise to [0,1] because raw BM25 is unbounded.
+            idx = self._bm25_index_for(live)
+            raw = idx.scores(query)
+            top = max(raw) if raw else 0.0
+            lex = [(s / top) if top > 0 else 0.0 for s in raw]
+        else:
+            ql = self._lex_emb(query)
+            lex = [_sim(ql, self._lex_emb(n.content)) for n in live]
         scored = []
-        for n in self._live_nodes(lane):
+        for n, lx in zip(live, lex):
             d = _sim(qe, n.embedding)
-            lx = _sim(ql, self._lex_emb(n.content))
             scored.append((alpha * d + (1.0 - alpha) * lx, n))
         scored.sort(key=lambda x: -x[0])
         scored = self._apply_score_floor(scored, rel_floor, min_score)

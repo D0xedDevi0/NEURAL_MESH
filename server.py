@@ -121,6 +121,13 @@ IDENTITIES_HEAD = os.environ.get("NEURAL_MESH_IDENTITY_HEAD", "")
 mesh = Mesh(
     db_path=DB_PATH,
     resonance_backend=os.environ.get("NEURAL_MESH_RESONANCE_BACKEND", "auto"),
+    # Retrieval knobs were constructor-only, so a deployment could not change
+    # them without editing code. Expose both: default_recall picks the mode
+    # /mesh/recall uses when none is given, lexical_backend picks what the
+    # lexical half of hybrid actually is (bow = hashed bag-of-words, bm25 = real
+    # ranker). Defaults preserve the historic behaviour exactly.
+    default_recall=os.environ.get("NEURAL_MESH_DEFAULT_RECALL", "dense"),
+    lexical_backend=os.environ.get("NEURAL_MESH_LEXICAL_BACKEND", "bow"),
     anchor_file=ANCHOR_FILE,
     signer=_load_signer_file(),
     identities_path=IDENTITIES_PATH,
