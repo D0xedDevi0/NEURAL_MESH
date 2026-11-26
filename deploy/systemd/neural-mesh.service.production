@@ -1,0 +1,20 @@
+[Unit]
+Description=NEURAL_MESH Memory Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/data/NEURAL_MESH
+EnvironmentFile=/opt/data/NEURAL_MESH/.env
+Environment=PYTHONUNBUFFERED=1
+Environment=NEURAL_MESH_ANCHOR_FILE=/var/lib/neural-mesh/anchors.jsonl
+ExecStart=/usr/bin/python3 /opt/data/NEURAL_MESH/server.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=neural-mesh
+
+[Install]
+WantedBy=multi-user.target

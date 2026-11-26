@@ -1,0 +1,7 @@
+[Unit]
+Description=NEURAL_MESH canonical backup
+After=neural-mesh.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/data/NEURAL_MESH/backup_mesh.sh

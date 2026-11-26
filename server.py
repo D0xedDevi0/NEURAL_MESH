@@ -30,11 +30,17 @@ RATE_LIMITER = RateLimiter(
     window_seconds=int(os.environ.get("NEURAL_MESH_RATE_WINDOW", "60")),
 )
 AUTH_ENDPOINTS = {"add", "memory_cycle", "sleep_mesh", "consolidate_mesh",
+                  "recall", "recall_asof_route", "snapshot_route",
+                  "ledger_verify_route", "ledger_provenance_route",
                   "pointer_put", "pointer_summary", "dream", "export_mesh",
                   "merge", "stamp", "intuition_ingest_receipts", "eval_qa",
                   "yantrikdb_ingest", "yantrikdb_think", "helixa_attest_node",
                   "peer_query", "mesh_audit", "federated_recall", "federated_dream",
-                  "federation_sync", "ledger_anchor_route", "ledger_adopt_route"}
+                  "federation_sync", "ledger_anchor_route", "ledger_adopt_route",
+    # Phase 8 audit: these return memory content; the canonical store now holds private brain memory.
+    "answer", "answer_proof", "recall_proof", "subgraph_query", "yantrikdb_recall", "yantrikdb_enhanced_recall", "yantrikdb_skills_search",
+    "forget_probes",
+}
 POLICY_FIELDS = {"trust", "cap_trust", "allow_new", "allow_merge"}
 
 
@@ -294,14 +300,35 @@ def add():
     user_meta = data.get("meta", {})
     if user_meta:
         extra.update(user_meta)
-    node = mesh.add(
-        content=data["content"],
-        type=MemoryType(data.get("type", "semantic")),
-        provenance=data.get("provenance", ""),
-        supersedes=data.get("supersedes", ""),
-        meta=extra,
-        by=data.get("by", ""),
-    )
+    kwargs = {}
+    # Bi-temporal fields: the live provider sends them on every remember call and
+    # dropping them here silently made point-in-time recall impossible over HTTP.
+    for field in ("valid_from", "valid_to"):
+        value = data.get(field)
+        if value not in (None, ""):
+            try:
+                kwargs[field] = int(value)
+            except (TypeError, ValueError):
+                pass
+    try:
+        node = mesh.add(
+            content=data["content"],
+            type=MemoryType(data.get("type", "semantic")),
+            provenance=data.get("provenance", ""),
+            supersedes=data.get("supersedes", ""),
+            meta=extra,
+            by=data.get("by", ""),
+            **kwargs,
+        )
+    except TypeError:
+        node = mesh.add(
+            content=data["content"],
+            type=MemoryType(data.get("type", "semantic")),
+            provenance=data.get("provenance", ""),
+            supersedes=data.get("supersedes", ""),
+            meta=extra,
+            by=data.get("by", ""),
+        )
     return jsonify({"id": node.id, "content": node.content, "type": node.type.value})
 
 
@@ -1180,11 +1207,33 @@ def erc8004_validation(agent_id: str):
 @app.route("/mesh/answer", methods=["POST"])
 def answer():
     """Generate answer from retrieved context. Body: {query, context_chunks[], reader?}"""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
+    if not data.get("query") or not isinstance(data.get("context_chunks"), list):
+        return jsonify({"error": "body must be {query: str, context_chunks: [str, ...]}"}), 400
     from neural_mesh.reader import ExtractiveReader
     reader = ExtractiveReader()
     answer = reader.answer(data["query"], data["context_chunks"])
     return jsonify({"answer": answer, "method": "extractive_proxy"})
+
+
+# Retire Gate 8 test probes. Authenticated and deliberately narrow: only nodes whose provenance
+# starts with "gate8" can be forgotten here, so a leaked token cannot erase real memory.
+# Each erasure is ledger-recorded by forget_memory.
+@app.route("/mesh/forget-probes", methods=["POST"])
+def forget_probes():
+    import json as _json
+    done = 0
+    for nid, meta in mesh.db.execute("select id, meta from nodes where meta like '%gate8%'").fetchall():
+        try:
+            md = _json.loads(meta or "{}")
+        except Exception:
+            continue
+        if str(md.get("provenance", "")).startswith("gate8"):
+            r = mesh.forget_memory(nid, reason="gate8 probe cleanup", by="gate8-cleanup")
+            done += bool(r.get("deleted"))
+        if done >= 500:
+            break
+    return jsonify({"forgotten": done})
 
 @app.route("/mesh/recall-proof", methods=["POST"])
 def recall_proof():
