@@ -1,8 +1,14 @@
-# GitHub Actions — NEURAL_MESH CI (self-hosted runner on VPS)
+# GitHub Actions — NEURAL_MESH CI
 #
-# Runner: neural-mesh-vps on Hostinger (api.d0xeddev.com)
-#        Ubuntu 24.04, Python 3.12, x86_64
-#        Service: /etc/systemd/system/actions.runner.*.service
+# These jobs run on GitHub-hosted runners. The repo is public, so that is free, and it
+# is the only thing that works here: the box's self-hosted runner is registered against
+# a *different* repository (BasedNUKEM/NEURAL_MESH), so a job asking for `self-hosted`
+# in D0xedDevi0/NEURAL_MESH queues forever. Nothing ran between 2026-10-17 and
+# 2026-11-26 because of it.
+#
+# To go back to self-hosted: register a runner against D0xedDevi0/NEURAL_MESH first
+# (Settings -> Actions -> Runners, or config.sh with a repo registration token), then
+# change these `runs-on` values back to `self-hosted`.
 
 name: CI
 
@@ -17,7 +23,7 @@ permissions:
 
 jobs:
   core-tests:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Core tests (unittest — pure stdlib, no deps)
@@ -25,7 +31,7 @@ jobs:
           PYTHONPATH=. python3 -m unittest tests.test_core tests.test_security tests.test_dream_provenance_guard tests.test_reputation tests.test_lanes tests.test_lifecycle tests.test_sharing tests.test_meshfile tests.test_cli_operations -v -q 2>&1
 
   server-tests:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     needs: core-tests
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +40,13 @@ jobs:
           PYTHONPATH=. python3 -m unittest tests.test_server_lifecycle tests.test_server_operations -v 2>&1
 
   lint:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
+      - name: Install flake8
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check flake8
       - name: Flake8 syntax checks
         run: |
           python3 -m flake8 neural_mesh/ server.py --count --select=E9,F63,F7,F82 --show-source --statistics 2>&1
