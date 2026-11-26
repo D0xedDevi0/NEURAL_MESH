@@ -35,6 +35,9 @@ jobs:
     needs: core-tests
     steps:
       - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --quiet --disable-pip-version-check -r requirements.txt
       - name: Server tests
         run: |
           PYTHONPATH=. python3 -m unittest tests.test_server_lifecycle tests.test_server_operations -v 2>&1

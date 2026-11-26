@@ -1,0 +1,8 @@
+# Runtime dependencies of server.py and the ledger signer.
+# Versions verified against the production host (api.d0xeddev.com), 2026-11-26:
+#   flask 3.0.2 | cryptography 41.0.7 | eth_account 0.13.7 | requests 2.31.0
+# Everything else the service imports is stdlib or in-repo (the neural_mesh package).
+flask>=3.0,<4
+cryptography>=41,<42
+eth-account>=0.13,<0.14
+requests>=2.31,<3
