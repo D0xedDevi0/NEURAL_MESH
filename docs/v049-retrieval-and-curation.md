@@ -48,19 +48,33 @@ Activation is a drop-in (`NEURAL_MESH_DEFAULT_RECALL=hybrid`,
 `NEURAL_MESH_LEXICAL_BACKEND=bm25`); code defaults stay `dense`/`bow`, so deleting
 the file restores the previous ranking exactly.
 
-## The limitation this exposed
+## The limitation this exposed — and how it was closed
 
 The agent-side plugin in this deployment reads a **local** 5,563-node store
-(`/opt/data/neural-mesh/mesh.db`), not the remote service. With the service fix
-live, `mesh_recall("community-art")` through the agent still returns two
-delegated-task briefs and buries the flock record. Service ranking and client
-ranking are two different corpora and two different code paths; fixing one does
-not fix the other.
+(`/opt/data/neural-mesh/mesh.db`), not the remote service, so the service fix alone
+did not change what the tool returned. Testing a fresh `hermes chat` process also
+returned the old answer, which looked like proof the reload was unnecessary.
 
-So: the tokenizer fix (`19b720b`) is necessary and correct — without it a
-`Loopers/community-art` document shares no token with a `community-art` query —
-but it is not sufficient. The client path needs the same treatment, measured on
-the same probe set, before anyone claims this case is closed.
+It was not. Tool calls run inside the long-lived gateway process, which had been up
+since the previous day and therefore held the pre-fix plugin in memory. An env-gated
+trace added to `_recall` never fired — the executed module was not the file on disk.
+After restarting the gateway (00:18:46Z), `mesh_recall("community-art")` returns:
+
+1. `2e3f53ef` — flock dynamics: Looper #646 sold, #645 BAIT → Mr.BATES as the
+   community-art specialist
+2. `a255f585` — the same record, stating the rename and the community-art role
+3. `4bb7cf8b` — the duplicate copy of that record
+
+Three changes were needed, and only the last one activates the other two:
+
+- tokenizer (`19b720b`): a `Loopers/community-art` document shares a token with a
+  `community-art` query
+- service ranking (`ec9ad502`): BM25 as hybrid's lexical half, 20th → 2nd
+- a gateway restart: a fresh CLI process is **not** evidence that the gateway
+  reloaded a plugin
+
+Lesson worth keeping: "I edited it and a new process behaves the same" proves
+nothing when tool execution is proxied through a daemon that predates the edit.
 
 ## Reproduce
 
